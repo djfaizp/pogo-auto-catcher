@@ -12,8 +12,21 @@ import androidx.navigation.ui.setupWithNavController
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.catcher.pogoauto.databinding.ActivityMainBinding
+import java.io.DataOutputStream
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        init {
+            try {
+                System.loadLibrary("frida-gadget")
+            } catch (e: UnsatisfiedLinkError) {
+                // Handle error: Frida gadget not found or couldn't be loaded
+                // Log.e("MainActivity", "Failed to load frida-gadget", e)
+            }
+        }
+    }
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
@@ -23,6 +36,8 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        requestRootPermission()
 
         setSupportActionBar(binding.appBarMain.toolbar)
 
@@ -54,5 +69,37 @@ class MainActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment_content_main)
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
+    private fun requestRootPermission() {
+        var process: Process? = null
+        var os: DataOutputStream? = null
+        try {
+            process = Runtime.getRuntime().exec("su")
+            os = DataOutputStream(process.outputStream)
+            os.writeBytes("exit\n")
+            os.flush()
+            val exitValue = process.waitFor()
+            if (exitValue == 0) {
+                // Root access granted
+                Snackbar.make(binding.root, "Root access granted", Snackbar.LENGTH_SHORT).show()
+            } else {
+                // Root access denied or error
+                Snackbar.make(binding.root, "Root access denied", Snackbar.LENGTH_SHORT).show()
+            }
+        } catch (e: IOException) {
+            // Error executing su
+            Snackbar.make(binding.root, "Error requesting root: ${e.message}", Snackbar.LENGTH_LONG).show()
+        } catch (e: InterruptedException) {
+            // Error waiting for process
+            Snackbar.make(binding.root, "Error requesting root: ${e.message}", Snackbar.LENGTH_LONG).show()
+        } finally {
+            try {
+                os?.close()
+                process?.destroy()
+            } catch (e: IOException) {
+                // Ignore close error
+            }
+        }
     }
 }
