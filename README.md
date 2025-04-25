@@ -34,9 +34,48 @@ This application uses Frida Gadget to hook into the Pokémon GO process and modi
 
 ### Building the App
 
+#### Debug Build
+
 1. Clone this repository
 2. Open the project in Android Studio
 3. Build and install the app on your rooted device
+
+#### Release Build
+
+To create a signed release build:
+
+1. Run the `create-keystore.bat` script to generate a keystore file
+2. Follow the prompts to create your keystore
+3. Build the release APK in Android Studio or using Gradle:
+   ```
+   ./gradlew assembleRelease
+   ```
+4. The signed APK will be available at `app/build/outputs/apk/release/app-release.apk`
+
+### Creating GitHub Releases
+
+This project is configured with GitHub Actions to automatically build and publish release APKs when a new tag is pushed or when manually triggered.
+
+To create a new release:
+
+1. Push a new tag with a version number:
+   ```
+   git tag -a v1.0.1 -m "Version 1.0.1"
+   git push origin v1.0.1
+   ```
+
+2. Or manually trigger the workflow from the GitHub Actions tab and provide the version name and code.
+
+3. GitHub Actions will build the release APK, sign it with the keystore (stored in GitHub Secrets), and create a new release with the APK attached.
+
+#### Required GitHub Secrets
+
+For the automated release process to work, you need to set up the following secrets in your GitHub repository:
+
+- `RELEASE_KEYSTORE`: Base64-encoded keystore file
+- `SIGNING_KEY_ALIAS`: The alias used when creating the keystore
+- `SIGNING_KEY_PASSWORD`: The password for the key
+- `SIGNING_STORE_PASSWORD`: The password for the keystore
 
 ### Using the App
 

@@ -17,6 +17,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            // Use environment variables for CI/CD or gradle.properties for local builds
+            val keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: project.findProperty("signing.keyAlias") as String?
+            val keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: project.findProperty("signing.keyPassword") as String?
+            val storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: project.findProperty("signing.storePassword") as String?
+            val storeFile = System.getenv("SIGNING_STORE_FILE") ?: project.findProperty("signing.storeFile") as String?
+
+            if (keyAlias != null && keyPassword != null && storePassword != null) {
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+                this.storePassword = storePassword
+                this.storeFile = storeFile?.let { file(it) } ?: file("../keystore.jks")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -24,6 +41,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
