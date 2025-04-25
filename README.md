@@ -1,3 +1,5 @@
+[![Build Release APK](https://github.com/djfaizp/pogo-auto-catcher/actions/workflows/build-release.yml/badge.svg)](https://github.com/djfaizp/pogo-auto-catcher/actions/workflows/build-release.yml)
+
 # Pokémon GO Auto Catcher
 
 An Android application that uses Frida Gadget to hook into Pokémon GO and implement various cheats using frida-il2cpp-bridge.
