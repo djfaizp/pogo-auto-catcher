@@ -2,6 +2,9 @@
 
 An Android application that uses Frida Gadget to hook into Pokémon GO and implement various cheats using frida-il2cpp-bridge.
 
+## Aplication is still under development
+
+
 ## Features
 
 - Perfect Throw: Always hits inside the smallest circle with a curveball
