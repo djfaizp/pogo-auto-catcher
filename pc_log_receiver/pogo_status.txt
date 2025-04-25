@@ -1,0 +1,2 @@
+u0_a257      24282  1022   22800052 1337816 0                  0 S com.nianticlabs.pokemongo
+u0_a257      24611  1022   14272064 136096 0                   0 S com.nianticlabs.pokemongo:pgp

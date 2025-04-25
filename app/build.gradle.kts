@@ -44,11 +44,17 @@ android {
         buildConfig = true
     }
 
-    // Disable stripping of the Frida gadget library
+    // Configure native library packaging
     packagingOptions {
         jniLibs {
             keepDebugSymbols += "**/libfrida-gadget.so"
+            useLegacyPackaging = true  // Use legacy packaging for better compatibility
         }
+    }
+
+    // Ensure native libraries are properly extracted
+    androidResources {
+        noCompress += "so"  // Don't compress .so files
     }
 }
 

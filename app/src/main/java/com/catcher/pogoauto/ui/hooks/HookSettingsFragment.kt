@@ -8,8 +8,10 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.catcher.pogoauto.FridaScriptManager
+import com.catcher.pogoauto.R
 import com.catcher.pogoauto.databinding.FragmentHookSettingsBinding
 import com.catcher.pogoauto.utils.LogUtils
+import com.catcher.pogoauto.utils.SettingsManager
 
 class HookSettingsFragment : Fragment() {
     companion object {
@@ -21,18 +23,23 @@ class HookSettingsFragment : Fragment() {
 
     private lateinit var hookSettingsViewModel: HookSettingsViewModel
     private lateinit var fridaScriptManager: FridaScriptManager
+    private lateinit var settingsManager: SettingsManager
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        hookSettingsViewModel = ViewModelProvider(this).get(HookSettingsViewModel::class.java)
+        // Initialize view model with application context
+        val factory = HookSettingsViewModel.Factory(requireActivity().application)
+        hookSettingsViewModel = ViewModelProvider(this, factory).get(HookSettingsViewModel::class.java)
+
         _binding = FragmentHookSettingsBinding.inflate(inflater, container, false)
         val root: View = binding.root
 
-        // Initialize Frida script manager
+        // Initialize managers
         fridaScriptManager = FridaScriptManager(requireContext())
+        settingsManager = SettingsManager(requireContext())
 
         // Set up UI elements
         setupUI()
@@ -222,6 +229,29 @@ class HookSettingsFragment : Fragment() {
             }
         }
 
+        // Pokéball type settings
+        hookSettingsViewModel.pokeBallType.observe(viewLifecycleOwner) { type ->
+            when (type) {
+                PokeBallType.POKE_BALL -> binding.radioGroupPokeballType.check(R.id.radio_pokeball_type_poke_ball)
+                PokeBallType.GREAT_BALL -> binding.radioGroupPokeballType.check(R.id.radio_pokeball_type_great_ball)
+                PokeBallType.ULTRA_BALL -> binding.radioGroupPokeballType.check(R.id.radio_pokeball_type_ultra_ball)
+            }
+        }
+
+        binding.radioGroupPokeballType.setOnCheckedChangeListener { _, checkedId ->
+            when (checkedId) {
+                R.id.radio_pokeball_type_poke_ball -> {
+                    hookSettingsViewModel.setPokeBallType(PokeBallType.POKE_BALL)
+                }
+                R.id.radio_pokeball_type_great_ball -> {
+                    hookSettingsViewModel.setPokeBallType(PokeBallType.GREAT_BALL)
+                }
+                R.id.radio_pokeball_type_ultra_ball -> {
+                    hookSettingsViewModel.setPokeBallType(PokeBallType.ULTRA_BALL)
+                }
+            }
+        }
+
         // Update visibility
         updateAutoCatchSettingsVisibility()
     }
@@ -259,6 +289,15 @@ class HookSettingsFragment : Fragment() {
             fridaScriptManager.setAutoCatchDelay(hookSettingsViewModel.autoCatchDelay.value ?: 500)
             fridaScriptManager.setAutoCatchRetryOnEscape(hookSettingsViewModel.autoCatchRetryOnEscape.value ?: true)
             fridaScriptManager.setAutoCatchMaxRetries(hookSettingsViewModel.autoCatchMaxRetries.value ?: 3)
+
+            // Set Pokéball type
+            val ballType = when (hookSettingsViewModel.pokeBallType.value) {
+                PokeBallType.POKE_BALL -> "POKE_BALL"
+                PokeBallType.GREAT_BALL -> "GREAT_BALL"
+                PokeBallType.ULTRA_BALL -> "ULTRA_BALL"
+                else -> "POKE_BALL"
+            }
+            fridaScriptManager.setAutoCatchBallType(ballType)
 
             LogUtils.i(TAG, "Applied hook settings")
             Toast.makeText(requireContext(), "Settings applied", Toast.LENGTH_SHORT).show()

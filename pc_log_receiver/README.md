@@ -2,6 +2,13 @@
 
 This is a desktop application that receives and displays Pokémon GO activity logs from the Android app.
 
+## Log Receiver Options
+
+There are two ways to receive logs from the Android app:
+
+1. **WebSocket Log Receiver**: Receives logs sent from the Android app via WebSocket
+2. **Frida Log Receiver**: Directly captures logs from the Frida script injected into Pokémon GO
+
 ## Features
 
 - Receives logs in real-time from the Android app
@@ -23,15 +30,46 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### WebSocket Log Receiver
 
-Run the log receiver with default settings:
+Run the WebSocket log receiver with default settings:
 
 ```
 python LogReceiver.py
 ```
 
 This will start the receiver on the default port (9999).
+
+### Frida Log Receiver
+
+Run the Frida log receiver to directly capture logs from the Frida script:
+
+```
+python FridaLogReceiver.py [--device DEVICE_ID] [--package PACKAGE_NAME] [--output OUTPUT_FILE] [--dark-mode]
+```
+
+Options:
+- `--device DEVICE_ID`: Frida device ID (default: USB device)
+- `--package PACKAGE_NAME`: Package name (default: com.nianticlabs.pokemongo)
+- `--output OUTPUT_FILE`: File to save logs to (default: frida_logs_TIMESTAMP.txt)
+- `--dark-mode`: Use dark mode (black background)
+
+Or simply run:
+```
+run_frida_logger.bat
+```
+
+#### Frida Setup
+
+Before using the Frida log receiver, you need to set up Frida on your device:
+
+1. Run the setup script:
+   ```
+   setup_frida.bat
+   ```
+
+2. Make sure Pokémon GO is running on your device
+3. Make sure the Auto Catcher app is running on your device
 
 ### Advanced Options
 
@@ -91,6 +129,21 @@ python LogReceiver.py --dark-mode --stats
 
 ## Troubleshooting
 
+### WebSocket Log Receiver
+
 - If you're not receiving logs, check that your firewall allows incoming connections on the specified port
 - Make sure your Android device and PC are on the same network
 - Verify that the IP address in the app settings is correct
+
+### Frida Log Receiver
+
+- If you see an error like "Frida server is not running on the device", run the setup script:
+  ```
+  setup_frida.bat
+  ```
+
+- If you see an error like "Process com.nianticlabs.pokemongo not found", make sure Pokémon GO is running on your device
+
+- If you see permission errors when starting the Frida server, make sure your device is rooted and try again
+
+- If you're not seeing any logs, make sure the Auto Catcher app is properly configured to inject the Frida script into Pokémon GO

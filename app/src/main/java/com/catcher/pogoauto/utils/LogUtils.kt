@@ -60,7 +60,13 @@ object LogUtils {
         "UNITY" to true,       // Unity warnings and errors
         "FIREBASE" to true,    // Firebase analytics
         "PHYSICS" to true,     // Physics-related operations
-        "AUTH" to true         // Authentication operations
+        "AUTH" to true,        // Authentication operations
+        "FRIDA_HOOK" to true,  // Frida hooking process
+        "DEBUG" to true,       // Debug messages
+        "ERROR" to true,       // Error messages
+        "PERF" to true,        // Performance metrics
+        "ASSEMBLY" to true,    // Assembly loading
+        "DIAGNOSTICS" to true  // Diagnostic information
     )
 
     /**
@@ -106,9 +112,9 @@ object LogUtils {
     fun trace(message: String) {
         if (!isTraceEnabled) return
 
-        // Check if it's already a formatted trace message
+        // Check for different message formats
         if (message.startsWith("[TRACE]")) {
-            // Extract the category from the message
+            // Standard trace message format
             val categoryRegex = "\\[TRACE\\]\\[[^\\]]*\\]\\[([^\\]]+)\\]".toRegex()
             val categoryMatch = categoryRegex.find(message)
             val category = categoryMatch?.groupValues?.get(1) ?: "FRIDA"
@@ -120,8 +126,42 @@ object LogUtils {
 
             // Pass it through
             addRawToLogBuffer(message)
+        } else if (message.startsWith("[DEBUG]")) {
+            // Debug message format
+            val categoryRegex = "\\[DEBUG\\]\\[[^\\]]*\\]\\[FRIDA_HOOK\\]\\[([^\\]]+)\\]".toRegex()
+            val categoryMatch = categoryRegex.find(message)
+            val category = categoryMatch?.groupValues?.get(1) ?: "DEBUG"
+
+            // Check if this category is enabled
+            if (!isTraceCategoryEnabled(category) || !isTraceCategoryEnabled("DEBUG")) {
+                return
+            }
+
+            // Pass it through
+            addRawToLogBuffer(message)
+        } else if (message.startsWith("[ERROR]")) {
+            // Error message format
+            val categoryRegex = "\\[ERROR\\]\\[[^\\]]*\\]\\[FRIDA_HOOK\\]\\[([^\\]]+)\\]".toRegex()
+            val categoryMatch = categoryRegex.find(message)
+            val category = categoryMatch?.groupValues?.get(1) ?: "ERROR"
+
+            // Error messages are always logged
+            addRawToLogBuffer(message)
+        } else if (message.contains("[FRIDA_HOOK]")) {
+            // Other Frida hook messages
+            val categoryRegex = "\\[[^\\]]*\\]\\[FRIDA_HOOK\\]\\[([^\\]]+)\\]".toRegex()
+            val categoryMatch = categoryRegex.find(message)
+            val category = categoryMatch?.groupValues?.get(1) ?: "FRIDA_HOOK"
+
+            // Check if this category is enabled
+            if (!isTraceCategoryEnabled(category) || !isTraceCategoryEnabled("FRIDA_HOOK")) {
+                return
+            }
+
+            // Pass it through
+            addRawToLogBuffer(message)
         } else {
-            // Format it as a trace message
+            // Format it as a standard trace message
             val timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).format(Date())
             val formattedMessage = "[TRACE][$timestamp][FRIDA] $message"
 

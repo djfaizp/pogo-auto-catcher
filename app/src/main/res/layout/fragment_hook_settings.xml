@@ -372,6 +372,40 @@
                                 android:text="3 attempts"
                                 android:textStyle="bold" />
                         </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:text="Pokéball Type:"
+                            android:textStyle="bold" />
+
+                        <RadioGroup
+                            android:id="@+id/radio_group_pokeball_type"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/radio_pokeball_type_poke_ball"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="Poké Ball" />
+
+                            <RadioButton
+                                android:id="@+id/radio_pokeball_type_great_ball"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Great Ball" />
+
+                            <RadioButton
+                                android:id="@+id/radio_pokeball_type_ultra_ball"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Ultra Ball" />
+                        </RadioGroup>
                     </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

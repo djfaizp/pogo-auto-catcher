@@ -4,12 +4,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CompoundButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.catcher.pogoauto.FridaScriptManager
 import com.catcher.pogoauto.R
@@ -87,11 +87,6 @@ class HomeFragment : Fragment() {
             }
         }
 
-        // Set up perfect throw switch
-        homeViewModel.isPerfectThrowEnabled.observe(viewLifecycleOwner) {
-            binding.switchPerfectThrow.isChecked = it
-        }
-
         // Set up check button
         binding.buttonCheck.setOnClickListener {
             checkPokemonGo()
@@ -102,10 +97,15 @@ class HomeFragment : Fragment() {
             launchPokemonGo()
         }
 
-        // Set up perfect throw switch
-        binding.switchPerfectThrow.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
-            homeViewModel.setPerfectThrowEnabled(isChecked)
-            updateFridaScript()
+        // Set up stop button
+        binding.buttonStop.setOnClickListener {
+            stopPokemonGo()
+        }
+
+        // Set up open settings button
+        binding.buttonOpenSettings.setOnClickListener {
+            // Navigate to the Hook Settings fragment
+            findNavController().navigate(R.id.nav_hook_settings)
         }
     }
 
@@ -122,15 +122,15 @@ class HomeFragment : Fragment() {
 
                 // Launch Pokémon GO
                 if (fridaScriptManager.launchPokemonGo()) {
-                    homeViewModel.setStatus("Running")
+                    homeViewModel.setStatus(HomeViewModel.STATUS_RUNNING)
                     homeViewModel.appendLog("Launched Pokémon GO with Frida hook")
                 } else {
-                    homeViewModel.setStatus("Failed to launch")
+                    homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                     homeViewModel.appendLog("Failed to launch Pokémon GO (package: $packageName)")
                     Toast.makeText(requireContext(), "Failed to launch Pokémon GO", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                homeViewModel.setStatus("Failed to extract script")
+                homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                 homeViewModel.appendLog("Failed to extract Frida script")
                 Toast.makeText(requireContext(), "Failed to extract Frida script", Toast.LENGTH_SHORT).show()
             }
@@ -144,20 +144,20 @@ class HomeFragment : Fragment() {
 
                 // Launch Pokémon GO
                 if (fridaScriptManager.launchPokemonGo()) {
-                    homeViewModel.setStatus("Running")
+                    homeViewModel.setStatus(HomeViewModel.STATUS_RUNNING)
                     homeViewModel.appendLog("Launched Pokémon GO with Frida hook")
                 } else {
-                    homeViewModel.setStatus("Failed to launch")
+                    homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                     homeViewModel.appendLog("Failed to launch Pokémon GO")
                     Toast.makeText(requireContext(), "Failed to launch Pokémon GO", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                homeViewModel.setStatus("Failed to extract script")
+                homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                 homeViewModel.appendLog("Failed to extract Frida script")
                 Toast.makeText(requireContext(), "Failed to extract Frida script", Toast.LENGTH_SHORT).show()
             }
         } else {
-            homeViewModel.setStatus("Pokémon GO not installed")
+            homeViewModel.setStatus(HomeViewModel.STATUS_NOT_RUNNING)
             homeViewModel.appendLog("Pokémon GO is not installed")
             Toast.makeText(requireContext(), "Pokémon GO is not installed", Toast.LENGTH_SHORT).show()
 
@@ -188,7 +188,7 @@ class HomeFragment : Fragment() {
         val packageName = fridaScriptManager.getPokemonGoPackageName()
 
         if (packageName != null) {
-            homeViewModel.setStatus("Pokémon GO found")
+            homeViewModel.setStatus(HomeViewModel.STATUS_NOT_RUNNING)
             homeViewModel.appendLog("Found Pokémon GO with package name: $packageName")
 
             // Get more details about the package
@@ -218,7 +218,7 @@ class HomeFragment : Fragment() {
                 homeViewModel.appendLog("Error getting package details: ${e.message}")
             }
         } else {
-            homeViewModel.setStatus("Pokémon GO not found")
+            homeViewModel.setStatus(HomeViewModel.STATUS_NOT_RUNNING)
             homeViewModel.appendLog("Pokémon GO is not installed")
 
             // List installed packages for debugging
@@ -249,12 +249,12 @@ class HomeFragment : Fragment() {
     }
 
     private fun updateFridaScript() {
-        val perfectThrowEnabled = homeViewModel.isPerfectThrowEnabled.value ?: true
-
-        // Update the Frida script with the current configuration
-        fridaScriptManager.setPerfectThrowEnabled(perfectThrowEnabled)
-
-        homeViewModel.appendLog("Updated Frida script: Perfect Throw ${if (perfectThrowEnabled) "enabled" else "disabled"}")
+        // Extract the Frida script with default settings
+        if (fridaScriptManager.extractScriptFromAssets()) {
+            homeViewModel.appendLog("Updated Frida script with current settings")
+        } else {
+            homeViewModel.appendLog("Failed to update Frida script")
+        }
     }
 
     /**
@@ -301,6 +301,39 @@ class HomeFragment : Fragment() {
             .create()
 
         dialog.show()
+    }
+
+    /**
+     * Stop Pokémon GO and clean up resources
+     */
+    private fun stopPokemonGo() {
+        homeViewModel.appendLog("Attempting to stop Pokémon GO...")
+
+        // Show a confirmation dialog
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Stop Pokémon GO")
+            .setMessage("Are you sure you want to stop Pokémon GO and the Frida hook?")
+            .setPositiveButton("Stop") { _, _ ->
+                // Run the stop operation in a background thread
+                Thread {
+                    val success = fridaScriptManager.stopPokemonGo()
+
+                    // Update UI on the main thread
+                    activity?.runOnUiThread {
+                        if (success) {
+                            homeViewModel.setStatus(HomeViewModel.STATUS_STOPPED)
+                            homeViewModel.appendLog("Pokémon GO stopped successfully")
+                            Toast.makeText(requireContext(), "Pokémon GO stopped", Toast.LENGTH_SHORT).show()
+                        } else {
+                            homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
+                            homeViewModel.appendLog("Failed to stop Pokémon GO")
+                            Toast.makeText(requireContext(), "Failed to stop Pokémon GO", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }.start()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /**

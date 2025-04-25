@@ -1,3 +1,4 @@
 colorama
 PyQt5
-pyqtgraph==0.4.6
+pyqtgraph
+frida-tools

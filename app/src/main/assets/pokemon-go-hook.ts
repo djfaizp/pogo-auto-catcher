@@ -1,15 +1,134 @@
 import "frida-il2cpp-bridge";
 
-Il2Cpp.perform(function() {
-    console.log("[+] Frida script loaded successfully");
-    console.log("[+] TRACE: Starting Pokémon GO activity tracing");
+// Debug logging function for Frida initialization and hooking process
+function logDebug(component, message, data = null) {
+    const timestamp = new Date().toISOString();
+    const dataStr = data ? JSON.stringify(data) : "";
+    console.log(`[DEBUG][${timestamp}][FRIDA_HOOK][${component}] ${message} ${dataStr}`);
 
-    // Get the Assembly-CSharp image
-    const AssemblyCSharp = Il2Cpp.domain.assembly("Assembly-CSharp").image;
-    // Get the UnityEngine image for core Unity functionality
-    const UnityEngine = Il2Cpp.domain.assembly("UnityEngine").image;
-    // Get the UnityEngine.CoreModule image
-    const UnityEngineCoreModule = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image;
+    // Also log to standard console for direct visibility in logcat
+    if (data) {
+        console.log(`FRIDA_DEBUG: [${component}] ${message}`, data);
+    } else {
+        console.log(`FRIDA_DEBUG: [${component}] ${message}`);
+    }
+}
+
+// Error logging function with stack trace
+function logError(component, message, error = null) {
+    const timestamp = new Date().toISOString();
+    const errorStr = error ? `\nError: ${error}\nStack: ${error.stack || "No stack trace"}` : "";
+    console.log(`[ERROR][${timestamp}][FRIDA_HOOK][${component}] ${message}${errorStr}`);
+
+    // Also log to standard console for direct visibility in logcat
+    console.log(`FRIDA_ERROR: [${component}] ${message}${errorStr}`);
+}
+
+// Self-test function to verify Frida script is running
+function fridaSelfTest() {
+    try {
+        logDebug("SELF_TEST", "Frida script self-test started");
+
+        // Test basic functionality
+        console.log("FRIDA_SELF_TEST: Basic console.log test");
+
+        // Test Il2Cpp availability
+        if (typeof Il2Cpp !== 'undefined') {
+            logDebug("SELF_TEST", "Il2Cpp is available");
+        } else {
+            logError("SELF_TEST", "Il2Cpp is not available");
+        }
+
+        // Test Frida availability
+        if (typeof Frida !== 'undefined') {
+            logDebug("SELF_TEST", "Frida is available", { version: Frida.version });
+        } else {
+            logError("SELF_TEST", "Frida is not available");
+        }
+
+        logDebug("SELF_TEST", "Frida script self-test completed successfully");
+        return true;
+    } catch (e) {
+        logError("SELF_TEST", "Frida script self-test failed", e);
+        return false;
+    }
+}
+
+// Performance timing
+const perfTimers = {};
+function startTimer(name) {
+    perfTimers[name] = Date.now();
+    logDebug("PERF", `Starting timer: ${name}`);
+}
+
+function endTimer(name) {
+    if (perfTimers[name]) {
+        const elapsed = Date.now() - perfTimers[name];
+        logDebug("PERF", `Timer ${name} completed in ${elapsed}ms`);
+        delete perfTimers[name];
+        return elapsed;
+    }
+    return 0;
+}
+
+// Run self-test before main execution
+console.log("FRIDA_INIT: Starting Frida script initialization");
+console.log("FRIDA_INIT: Running self-test...");
+fridaSelfTest();
+
+// Main Frida hook execution
+Il2Cpp.perform(function() {
+    try {
+        startTimer("script_initialization");
+        logDebug("INIT", "Frida script execution started");
+        console.log("[+] Frida script loaded successfully");
+        console.log("[+] TRACE: Starting Pokémon GO activity tracing");
+
+        // Log direct console messages for easier debugging
+        console.log("FRIDA_INIT: Il2Cpp.perform function is running");
+        console.log("FRIDA_INIT: Script version 1.0.1");
+
+        // Log Frida and Il2Cpp versions
+        logDebug("INIT", "Frida version info", {
+            version: Frida.version,
+            script_runtime: "V8",
+            script_version: "1.0.1"
+        });
+
+        logDebug("INIT", "Loading Il2Cpp assemblies");
+
+        // Get the Assembly-CSharp image
+        startTimer("load_assembly_csharp");
+        logDebug("ASSEMBLY", "Loading Assembly-CSharp");
+        const AssemblyCSharp = Il2Cpp.domain.assembly("Assembly-CSharp").image;
+        logDebug("ASSEMBLY", "Assembly-CSharp loaded successfully", {
+            classes: AssemblyCSharp.classes.length,
+            name: AssemblyCSharp.name,
+            filename: AssemblyCSharp.filename
+        });
+        endTimer("load_assembly_csharp");
+
+        // Get the UnityEngine image for core Unity functionality
+        startTimer("load_unity_engine");
+        logDebug("ASSEMBLY", "Loading UnityEngine");
+        const UnityEngine = Il2Cpp.domain.assembly("UnityEngine").image;
+        logDebug("ASSEMBLY", "UnityEngine loaded successfully", {
+            classes: UnityEngine.classes.length,
+            name: UnityEngine.name,
+            filename: UnityEngine.filename
+        });
+        endTimer("load_unity_engine");
+
+        // Get the UnityEngine.CoreModule image
+        startTimer("load_unity_core");
+        logDebug("ASSEMBLY", "Loading UnityEngine.CoreModule");
+        const UnityEngineCoreModule = Il2Cpp.domain.assembly("UnityEngine.CoreModule").image;
+        logDebug("ASSEMBLY", "UnityEngine.CoreModule loaded successfully", {
+            classes: UnityEngineCoreModule.classes.length,
+            name: UnityEngineCoreModule.name,
+            filename: UnityEngineCoreModule.filename
+        });
+        endTimer("load_unity_core");
 
     // Tracing configuration - these will be controlled by the UI
     const tracingConfig = {
@@ -32,10 +151,11 @@ Il2Cpp.perform(function() {
 
     // Auto catch configuration - will be replaced by the app
     const autoCatchConfig = {
-        enabled: false,
+        enabled: true,  // Set to true by default for testing
         delay: 500,
         retryOnEscape: true,  // New option to retry catching if Pokémon escapes
-        maxRetries: 3         // Maximum number of retry attempts
+        maxRetries: 3,        // Maximum number of retry attempts
+        ballType: "POKE_BALL" // Type of ball to use: POKE_BALL, GREAT_BALL, ULTRA_BALL
     };
 
     // Auto walk configuration - will be replaced by the app
@@ -277,52 +397,297 @@ Il2Cpp.perform(function() {
                                 // Define a function to perform the auto throw
                                 const performAutoThrow = function(controller) {
                                     try {
-                                        // Find the method to throw a ball
-                                        const throwBallMethod = controller.class.method("ThrowBall") ||
-                                                               controller.class.method("ThrowPokeball") ||
-                                                               controller.class.method("AttemptCapture") ||
-                                                               controller.class.method("TryCapture");
+                                        // Log all available methods for debugging
+                                        const allMethods = controller.class.methods;
+                                        console.log(`[DEBUG] Available methods in controller class (${controller.class.name}):`);
+                                        for (let i = 0; i < Math.min(allMethods.length, 20); i++) {
+                                            console.log(`[DEBUG] Method ${i}: ${allMethods[i].name}`);
+                                        }
+
+                                        // Try to find the inventory manager to select the ball type
+                                        try {
+                                            logActivity("CAPTURE", `Using ball type: ${autoCatchConfig.ballType}`);
+                                            console.log(`[DEBUG] Attempting to select ball type: ${autoCatchConfig.ballType}`);
+
+                                            // Try to find methods to select the ball type
+                                            const selectBallMethodNames = [
+                                                "SelectBall", "SetBallType", "ChangeBall", "UseBall",
+                                                "SelectPokeball", "SetPokeballType", "ChangeActiveBall"
+                                            ];
+
+                                            // Try to find a method to select the ball type
+                                            let selectBallMethod = null;
+                                            for (const methodName of selectBallMethodNames) {
+                                                if (controller.class.method(methodName)) {
+                                                    selectBallMethod = controller.class.method(methodName);
+                                                    console.log(`[DEBUG] Found method to select ball: ${methodName}`);
+                                                    break;
+                                                }
+                                            }
+
+                                            // If we found a method to select the ball type, try to use it
+                                            if (selectBallMethod) {
+                                                // Convert the ball type string to a numeric value or enum
+                                                let ballTypeValue = 1; // Default to Pokéball
+
+                                                switch (autoCatchConfig.ballType) {
+                                                    case "POKE_BALL":
+                                                        ballTypeValue = 1;
+                                                        break;
+                                                    case "GREAT_BALL":
+                                                        ballTypeValue = 2;
+                                                        break;
+                                                    case "ULTRA_BALL":
+                                                        ballTypeValue = 3;
+                                                        break;
+                                                    default:
+                                                        ballTypeValue = 1;
+                                                }
+
+                                                // Try to call the method with different parameter types
+                                                try {
+                                                    // Try as integer
+                                                    console.log(`[DEBUG] Trying to select ball with integer value: ${ballTypeValue}`);
+                                                    controller.method<Il2Cpp.Object>(selectBallMethod.name).invoke(ballTypeValue);
+                                                    logActivity("CAPTURE", `Selected ball type: ${autoCatchConfig.ballType} (value: ${ballTypeValue})`);
+                                                } catch (e) {
+                                                    console.log(`[DEBUG] Failed to select ball with integer, trying enum: ${e}`);
+
+                                                    // Try to find an enum type for ball types
+                                                    try {
+                                                        // Look for ball type enum in the controller class
+                                                        const enumFields = controller.class.fields.filter(f =>
+                                                            f.isStatic && (f.name.includes("BALL") || f.name.includes("Ball") ||
+                                                            f.name.includes("POKEBALL") || f.name.includes("Pokeball")));
+
+                                                        if (enumFields.length > 0) {
+                                                            console.log(`[DEBUG] Found ${enumFields.length} potential ball enum fields`);
+
+                                                            // Try to find the right enum value
+                                                            let enumValue = null;
+                                                            for (const field of enumFields) {
+                                                                const fieldName = field.name.toUpperCase();
+                                                                if ((autoCatchConfig.ballType === "POKE_BALL" &&
+                                                                    (fieldName.includes("POKE") || fieldName.includes("NORMAL") || fieldName.includes("STANDARD"))) ||
+                                                                    (autoCatchConfig.ballType === "GREAT_BALL" && fieldName.includes("GREAT")) ||
+                                                                    (autoCatchConfig.ballType === "ULTRA_BALL" && fieldName.includes("ULTRA"))) {
+
+                                                                    enumValue = controller.class.field(field.name).value;
+                                                                    console.log(`[DEBUG] Found enum value for ${autoCatchConfig.ballType}: ${field.name} = ${enumValue}`);
+                                                                    break;
+                                                                }
+                                                            }
+
+                                                            if (enumValue !== null) {
+                                                                controller.method<Il2Cpp.Object>(selectBallMethod.name).invoke(enumValue);
+                                                                logActivity("CAPTURE", `Selected ball type using enum: ${autoCatchConfig.ballType}`);
+                                                            }
+                                                        }
+                                                    } catch (enumError) {
+                                                        console.log(`[DEBUG] Error finding ball enum: ${enumError}`);
+                                                    }
+                                                }
+                                            } else {
+                                                console.log(`[DEBUG] Could not find method to select ball type`);
+                                            }
+                                        } catch (e) {
+                                            console.log(`[DEBUG] Error selecting ball type: ${e}`);
+                                        }
+
+                                        // Find the method to throw a ball - try more possible method names
+                                        const possibleMethodNames = [
+                                            "ThrowBall", "ThrowPokeball", "AttemptCapture", "TryCapture",
+                                            "ThrowBallAtPokemon", "CatchPokemon", "DoCatch", "DoThrow",
+                                            "OnBallThrow", "OnThrow", "ExecuteThrow", "PerformThrow"
+                                        ];
+
+                                        let throwBallMethod = null;
+                                        for (const methodName of possibleMethodNames) {
+                                            const method = controller.class.method(methodName);
+                                            if (method) {
+                                                throwBallMethod = method;
+                                                console.log(`[+] Found throw method: ${methodName}`);
+                                                break;
+                                            }
+                                        }
+
+                                        if (!throwBallMethod) {
+                                            // Try to find a method with "throw" or "catch" in the name
+                                            for (let i = 0; i < allMethods.length; i++) {
+                                                const methodName = allMethods[i].name.toLowerCase();
+                                                if (methodName.includes("throw") || methodName.includes("catch") ||
+                                                    methodName.includes("ball") || methodName.includes("pokeball")) {
+                                                    throwBallMethod = allMethods[i];
+                                                    console.log(`[+] Found throw method by name search: ${allMethods[i].name}`);
+                                                    break;
+                                                }
+                                            }
+                                        }
 
                                         if (throwBallMethod) {
-                                            logActivity("CAPTURE", "Executing auto throw");
+                                            logActivity("CAPTURE", `Executing auto throw using method: ${throwBallMethod.name}`);
+                                            console.log(`[DEBUG] Using throw method: ${throwBallMethod.name}`);
                                             currentEncounter.lastThrowTime = Date.now();
 
                                             // Create a throw struct if needed
                                             if (throwBallMethod.parameters.length > 0) {
                                                 const paramType = throwBallMethod.parameters[0].type;
+                                                console.log(`[DEBUG] Throw method parameter type: ${paramType ? paramType.name : "null"}`);
+
                                                 if (paramType && paramType.class) {
                                                     // Create a new instance of the parameter type
                                                     const throwParam = paramType.class.alloc();
+                                                    console.log(`[DEBUG] Created throw parameter of type: ${paramType.class.name}`);
 
-                                                    // Set perfect throw parameters
-                                                    if (throwParam.class.field("hitKillzone")) {
-                                                        throwParam.field("hitKillzone").value = true;
+                                                    // Log all fields in the parameter class
+                                                    const paramFields = paramType.class.fields;
+                                                    console.log(`[DEBUG] Parameter class has ${paramFields.length} fields:`);
+                                                    for (let i = 0; i < paramFields.length; i++) {
+                                                        if (!paramFields[i].isStatic) {
+                                                            console.log(`[DEBUG] Field ${i}: ${paramFields[i].name} (${paramFields[i].type.name})`);
+                                                        }
                                                     }
-                                                    if (throwParam.class.field("curveball")) {
-                                                        throwParam.field("curveball").value = true;
+
+                                                    // Set perfect throw parameters - try different field names
+                                                    const hitFields = ["hitKillzone", "hit", "hitTarget", "targetHit", "success", "isSuccess"];
+                                                    const curveFields = ["curveball", "curve", "spin", "isCurve", "isCurveball", "spinBall"];
+                                                    const sizeFields = ["killzoneSize", "size", "targetSize", "radius", "targetRadius", "throwQuality"];
+
+                                                    // Try to set hit field
+                                                    let hitFieldSet = false;
+                                                    for (const fieldName of hitFields) {
+                                                        try {
+                                                            if (throwParam.class.field(fieldName)) {
+                                                                throwParam.field(fieldName).value = true;
+                                                                console.log(`[DEBUG] Set hit field: ${fieldName} = true`);
+                                                                hitFieldSet = true;
+                                                                break;
+                                                            }
+                                                        } catch (e) {
+                                                            // Field doesn't exist, continue
+                                                        }
                                                     }
-                                                    if (throwParam.class.field("killzoneSize")) {
-                                                        throwParam.field("killzoneSize").value = 0.00; // EXCELLENT
+
+                                                    // Try to set curve field
+                                                    let curveFieldSet = false;
+                                                    for (const fieldName of curveFields) {
+                                                        try {
+                                                            if (throwParam.class.field(fieldName)) {
+                                                                throwParam.field(fieldName).value = true;
+                                                                console.log(`[DEBUG] Set curve field: ${fieldName} = true`);
+                                                                curveFieldSet = true;
+                                                                break;
+                                                            }
+                                                        } catch (e) {
+                                                            // Field doesn't exist, continue
+                                                        }
+                                                    }
+
+                                                    // Try to set size field
+                                                    let sizeFieldSet = false;
+                                                    for (const fieldName of sizeFields) {
+                                                        try {
+                                                            if (throwParam.class.field(fieldName)) {
+                                                                throwParam.field(fieldName).value = 0.00; // EXCELLENT
+                                                                console.log(`[DEBUG] Set size field: ${fieldName} = 0.00`);
+                                                                sizeFieldSet = true;
+                                                                break;
+                                                            }
+                                                        } catch (e) {
+                                                            // Field doesn't exist, continue
+                                                        }
+                                                    }
+
+                                                    // If we couldn't find specific fields, try to set all boolean fields to true
+                                                    // and all float fields to 0.0 for a perfect throw
+                                                    if (!hitFieldSet || !curveFieldSet || !sizeFieldSet) {
+                                                        console.log(`[DEBUG] Using fallback field setting strategy`);
+                                                        for (let i = 0; i < paramFields.length; i++) {
+                                                            const field = paramFields[i];
+                                                            if (!field.isStatic) {
+                                                                try {
+                                                                    if (field.type.name === "System.Boolean") {
+                                                                        throwParam.field(field.name).value = true;
+                                                                        console.log(`[DEBUG] Set boolean field: ${field.name} = true`);
+                                                                    } else if (field.type.name === "System.Single" || field.type.name === "System.Float") {
+                                                                        throwParam.field(field.name).value = 0.00;
+                                                                        console.log(`[DEBUG] Set float field: ${field.name} = 0.00`);
+                                                                    }
+                                                                } catch (e) {
+                                                                    console.log(`[DEBUG] Error setting field ${field.name}: ${e}`);
+                                                                }
+                                                            }
+                                                        }
                                                     }
 
                                                     // Call the throw method with our parameter
+                                                    console.log(`[DEBUG] Invoking ${throwBallMethod.name} with throw struct`);
                                                     controller.method<Il2Cpp.Object>(throwBallMethod.name).invoke(throwParam);
                                                     logActivity("CAPTURE", "Auto throw executed with throw struct");
                                                     return true;
                                                 } else {
                                                     // Call without parameters
+                                                    console.log(`[DEBUG] Invoking ${throwBallMethod.name} without parameters (no param class)`);
                                                     controller.method<Il2Cpp.Object>(throwBallMethod.name).invoke();
                                                     logActivity("CAPTURE", "Auto throw executed without parameters");
                                                     return true;
                                                 }
                                             } else {
                                                 // No parameters needed
+                                                console.log(`[DEBUG] Invoking ${throwBallMethod.name} without parameters (no params required)`);
                                                 controller.method<Il2Cpp.Object>(throwBallMethod.name).invoke();
                                                 logActivity("CAPTURE", "Auto throw executed without parameters");
                                                 return true;
                                             }
                                         } else {
+                                            console.log(`[-] Could not find any method to throw a ball`);
                                             logActivity("CAPTURE", "Could not find a method to throw a ball");
+
+                                            // Last resort: try to call AttemptCapture on the EncounterInteractionState class
+                                            try {
+                                                if (EncounterInteractionState && AttemptCapture) {
+                                                    console.log(`[DEBUG] Trying to use global AttemptCapture method as last resort`);
+
+                                                    // Try to get the current instance of EncounterInteractionState
+                                                    const instances = EncounterInteractionState.instances();
+                                                    if (instances && instances.length > 0) {
+                                                        const instance = instances[0];
+                                                        console.log(`[DEBUG] Found EncounterInteractionState instance`);
+
+                                                        // Create a throw struct
+                                                        const ThrowStruct = AttemptCapture.parameters[0].type.class;
+                                                        if (ThrowStruct) {
+                                                            const throwParam = ThrowStruct.alloc();
+
+                                                            // Set perfect throw parameters
+                                                            const fields = ThrowStruct.fields;
+                                                            for (let i = 0; i < fields.length; i++) {
+                                                                const field = fields[i];
+                                                                if (!field.isStatic) {
+                                                                    try {
+                                                                        if (field.type.name === "System.Boolean") {
+                                                                            throwParam.field(field.name).value = true;
+                                                                        } else if (field.type.name === "System.Single" || field.type.name === "System.Float") {
+                                                                            throwParam.field(field.name).value = 0.00;
+                                                                        }
+                                                                    } catch (e) {
+                                                                        // Ignore errors
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // Call AttemptCapture
+                                                            instance.method<Il2Cpp.Object>("AttemptCapture").invoke(throwParam);
+                                                            console.log(`[DEBUG] Called AttemptCapture as last resort`);
+                                                            logActivity("CAPTURE", "Auto throw executed using AttemptCapture as last resort");
+                                                            return true;
+                                                        }
+                                                    }
+                                                }
+                                            } catch (e) {
+                                                console.log(`[-] Last resort attempt failed: ${e}`);
+                                            }
+
                                             return false;
                                         }
                                     } catch (e) {
@@ -415,51 +780,80 @@ Il2Cpp.perform(function() {
 
                                         // Schedule the retry throw after a delay
                                         setTimeout(function() {
+                                            console.log(`[DEBUG] Attempting retry throw (attempt ${currentEncounter.retryCount} of ${autoCatchConfig.maxRetries})`);
+
+                                            // Reuse the performAutoThrow function for consistency
                                             try {
-                                                // Find the method to throw a ball
-                                                const throwBallMethod = self.class.method("ThrowBall") ||
-                                                                       self.class.method("ThrowPokeball") ||
-                                                                       self.class.method("AttemptCapture") ||
-                                                                       self.class.method("TryCapture");
-
-                                                if (throwBallMethod) {
-                                                    logActivity("CAPTURE", "Executing retry throw");
-                                                    currentEncounter.lastThrowTime = Date.now();
-
-                                                    // Create a throw struct if needed
-                                                    if (throwBallMethod.parameters.length > 0) {
-                                                        const paramType = throwBallMethod.parameters[0].type;
-                                                        if (paramType && paramType.class) {
-                                                            // Create a new instance of the parameter type
-                                                            const throwParam = paramType.class.alloc();
-
-                                                            // Set perfect throw parameters
-                                                            if (throwParam.class.field("hitKillzone")) {
-                                                                throwParam.field("hitKillzone").value = true;
-                                                            }
-                                                            if (throwParam.class.field("curveball")) {
-                                                                throwParam.field("curveball").value = true;
-                                                            }
-                                                            if (throwParam.class.field("killzoneSize")) {
-                                                                throwParam.field("killzoneSize").value = 0.00; // EXCELLENT
-                                                            }
-
-                                                            // Call the throw method with our parameter
-                                                            self.method<Il2Cpp.Object>(throwBallMethod.name).invoke(throwParam);
-                                                            logActivity("CAPTURE", "Retry throw executed with throw struct");
-                                                        } else {
-                                                            // Call without parameters
-                                                            self.method<Il2Cpp.Object>(throwBallMethod.name).invoke();
-                                                            logActivity("CAPTURE", "Retry throw executed without parameters");
-                                                        }
-                                                    } else {
-                                                        // No parameters needed
-                                                        self.method<Il2Cpp.Object>(throwBallMethod.name).invoke();
-                                                        logActivity("CAPTURE", "Retry throw executed without parameters");
-                                                    }
-                                                } else {
-                                                    logActivity("CAPTURE", "Could not find a method to throw a ball for retry");
+                                                // First try using the same controller (self)
+                                                if (performAutoThrow(self)) {
+                                                    console.log(`[DEBUG] Retry throw succeeded using controller`);
+                                                    return;
                                                 }
+
+                                                // If that fails, try to find the current EncounterInteractionState instance
+                                                console.log(`[DEBUG] Retry using EncounterInteractionState instance`);
+                                                if (EncounterInteractionState) {
+                                                    const instances = EncounterInteractionState.instances();
+                                                    if (instances && instances.length > 0) {
+                                                        const instance = instances[0];
+                                                        console.log(`[DEBUG] Found EncounterInteractionState instance for retry`);
+
+                                                        if (performAutoThrow(instance)) {
+                                                            console.log(`[DEBUG] Retry throw succeeded using EncounterInteractionState instance`);
+                                                            return;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Last resort: try to find any encounter-related controller in memory
+                                                console.log(`[DEBUG] Trying to find encounter controllers in memory for retry`);
+                                                const encounterClassNames = [
+                                                    "EncounterViewController",
+                                                    "EncounterManager",
+                                                    "PokemonCatchController",
+                                                    "CatchController",
+                                                    "EncounterUIController"
+                                                ];
+
+                                                for (const className of encounterClassNames) {
+                                                    try {
+                                                        // Try to find the class
+                                                        const classes = Il2Cpp.domain.assemblies
+                                                            .map(assembly => assembly.image.classes)
+                                                            .flat()
+                                                            .filter(cls => cls.name.includes(className));
+
+                                                        if (classes.length > 0) {
+                                                            console.log(`[DEBUG] Found ${classes.length} classes matching ${className}`);
+
+                                                            // Try each class
+                                                            for (const cls of classes) {
+                                                                try {
+                                                                    const instances = cls.instances();
+                                                                    if (instances && instances.length > 0) {
+                                                                        console.log(`[DEBUG] Found ${instances.length} instances of ${cls.name}`);
+
+                                                                        // Try each instance
+                                                                        for (const instance of instances) {
+                                                                            if (performAutoThrow(instance)) {
+                                                                                console.log(`[DEBUG] Retry throw succeeded using ${cls.name} instance`);
+                                                                                return;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                } catch (e) {
+                                                                    console.log(`[DEBUG] Error getting instances of ${cls.name}: ${e}`);
+                                                                }
+                                                            }
+                                                        }
+                                                    } catch (e) {
+                                                        console.log(`[DEBUG] Error finding class ${className}: ${e}`);
+                                                    }
+                                                }
+
+                                                // If all else fails, log the failure
+                                                console.log(`[-] All retry throw attempts failed`);
+                                                logActivity("CAPTURE", "All retry throw attempts failed");
                                             } catch (e) {
                                                 console.log(`[-] Error in retry throw: ${e}`);
                                                 logActivity("CAPTURE", `Retry throw failed: ${e}`);
@@ -1391,4 +1785,45 @@ Il2Cpp.perform(function() {
     }
 
     logActivity("INIT", "All hooks installed successfully");
+    endTimer("script_initialization");
+    logDebug("INIT", "Frida script initialization completed successfully");
+    } catch (error) {
+        logError("INIT", "Fatal error during Frida script execution", error);
+        console.log(`[ERROR] Fatal error in Frida script: ${error}`);
+
+        // Try to log some diagnostic information
+        try {
+            logDebug("DIAGNOSTICS", "Collecting diagnostic information");
+
+            // Log memory usage
+            const memoryUsage = Process.getMemoryInfo();
+            logDebug("DIAGNOSTICS", "Memory usage", memoryUsage);
+
+            // Log loaded modules
+            const modules = Process.enumerateModules();
+            logDebug("DIAGNOSTICS", "Loaded modules count", { count: modules.length });
+
+            // Log first 10 modules for reference
+            const topModules = modules.slice(0, 10).map(m => ({
+                name: m.name,
+                base: m.base.toString(),
+                size: m.size
+            }));
+            logDebug("DIAGNOSTICS", "Top modules", topModules);
+
+            // Log Il2Cpp domain info if available
+            try {
+                const domain = Il2Cpp.domain;
+                const assemblies = domain.assemblies.map(a => a.name);
+                logDebug("DIAGNOSTICS", "Il2Cpp domain info", {
+                    assemblies: assemblies,
+                    assemblyCount: assemblies.length
+                });
+            } catch (e) {
+                logDebug("DIAGNOSTICS", "Failed to get Il2Cpp domain info", { error: e.toString() });
+            }
+        } catch (diagError) {
+            logError("DIAGNOSTICS", "Failed to collect diagnostic information", diagError);
+        }
+    }
 });

@@ -8,6 +8,12 @@ import com.catcher.pogoauto.utils.LogUtils
 class HomeViewModel : ViewModel() {
     companion object {
         private const val TAG = "HomeViewModel"
+
+        // Status constants
+        const val STATUS_NOT_RUNNING = "Not Running"
+        const val STATUS_RUNNING = "Running"
+        const val STATUS_STOPPED = "Stopped"
+        const val STATUS_FAILED = "Failed"
     }
 
     private val _text = MutableLiveData<String>().apply {
@@ -22,11 +28,6 @@ class HomeViewModel : ViewModel() {
 
     // Use LogUtils for log output
     val logOutput: LiveData<String> = LogUtils.logLiveData
-
-    private val _isPerfectThrowEnabled = MutableLiveData<Boolean>().apply {
-        value = true
-    }
-    val isPerfectThrowEnabled: LiveData<Boolean> = _isPerfectThrowEnabled
 
     init {
         // Initialize logs
@@ -46,10 +47,5 @@ class HomeViewModel : ViewModel() {
 
     fun clearLog() {
         LogUtils.clearLogs()
-    }
-
-    fun setPerfectThrowEnabled(enabled: Boolean) {
-        _isPerfectThrowEnabled.value = enabled
-        LogUtils.i(TAG, "Perfect throw ${if (enabled) "enabled" else "disabled"}")
     }
 }

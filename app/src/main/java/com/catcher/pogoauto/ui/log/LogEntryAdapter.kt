@@ -19,10 +19,10 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
 
     // List of log entries
     private val logEntries = mutableListOf<String>()
-    
+
     // Filtered list of log entries
     private var filteredEntries = mutableListOf<String>()
-    
+
     // Active filters
     private val activeFilters = mutableSetOf<String>()
 
@@ -67,16 +67,16 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
 
     override fun onBindViewHolder(holder: LogViewHolder, position: Int) {
         val entry = filteredEntries[position]
-        
+
         // Apply syntax highlighting
         val spannableString = SpannableString(entry)
-        
+
         // Check if it's a trace message
         val traceMatcher = tracePattern.matcher(entry)
         if (traceMatcher.find()) {
-            val category = traceMatcher.group(1)
+            val category = traceMatcher.group(1) ?: ""
             val color = categoryColors[category] ?: Color.WHITE
-            
+
             // Highlight the category
             spannableString.setSpan(
                 ForegroundColorSpan(color),
@@ -88,9 +88,9 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
             // Check if it's a standard log message
             val logMatcher = logPattern.matcher(entry)
             if (logMatcher.find()) {
-                val level = logMatcher.group(1)
+                val level = logMatcher.group(1) ?: ""
                 val color = categoryColors[level] ?: Color.WHITE
-                
+
                 // Highlight the level
                 spannableString.setSpan(
                     ForegroundColorSpan(color),
@@ -100,7 +100,7 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
                 )
             }
         }
-        
+
         holder.textView.text = spannableString
     }
 
@@ -112,14 +112,14 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
     fun updateLogs(logs: String) {
         // Split the logs into individual entries
         val entries = logs.split("\n").filter { it.isNotEmpty() }
-        
+
         // Update the log entries
         logEntries.clear()
         logEntries.addAll(entries)
-        
+
         // Apply filters
         applyFilters()
-        
+
         // Notify the adapter
         notifyDataSetChanged()
     }
@@ -139,17 +139,17 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
                     // Check if it's a trace message with the specified category
                     val traceMatcher = tracePattern.matcher(entry)
                     if (traceMatcher.find()) {
-                        val category = traceMatcher.group(1)
+                        val category = traceMatcher.group(1) ?: ""
                         return@any category == filter
                     }
-                    
+
                     // Check if it's a standard log message with the specified level
                     val logMatcher = logPattern.matcher(entry)
                     if (logMatcher.find()) {
-                        val level = logMatcher.group(1)
+                        val level = logMatcher.group(1) ?: ""
                         return@any level == filter
                     }
-                    
+
                     // No match
                     false
                 }
@@ -166,10 +166,10 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
         } else {
             activeFilters.add(category)
         }
-        
+
         // Apply filters
         applyFilters()
-        
+
         // Notify the adapter
         notifyDataSetChanged()
     }
@@ -179,10 +179,10 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
      */
     fun clearFilters() {
         activeFilters.clear()
-        
+
         // Apply filters
         applyFilters()
-        
+
         // Notify the adapter
         notifyDataSetChanged()
     }
