@@ -41,6 +41,14 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
+    }
+
+    // Disable stripping of the Frida gadget library
+    packagingOptions {
+        jniLibs {
+            keepDebugSymbols += "**/libfrida-gadget.so"
+        }
     }
 }
 

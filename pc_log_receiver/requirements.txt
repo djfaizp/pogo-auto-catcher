@@ -1,0 +1,3 @@
+colorama
+PyQt5
+pyqtgraph==0.4.6

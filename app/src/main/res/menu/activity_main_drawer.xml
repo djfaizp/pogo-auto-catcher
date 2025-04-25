@@ -9,6 +9,22 @@
             android:icon="@drawable/ic_menu_camera"
             android:title="@string/menu_home" />
         <item
+            android:id="@+id/nav_permissions"
+            android:icon="@android:drawable/ic_menu_manage"
+            android:title="Permissions" />
+        <item
+            android:id="@+id/nav_log_settings"
+            android:icon="@android:drawable/ic_menu_sort_by_size"
+            android:title="Log Settings" />
+        <item
+            android:id="@+id/nav_trace_settings"
+            android:icon="@android:drawable/ic_menu_recent_history"
+            android:title="Trace Settings" />
+        <item
+            android:id="@+id/nav_hook_settings"
+            android:icon="@android:drawable/ic_menu_edit"
+            android:title="Hook Settings" />
+        <item
             android:id="@+id/nav_gallery"
             android:icon="@drawable/ic_menu_gallery"
             android:title="@string/menu_gallery" />

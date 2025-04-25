@@ -1,0 +1,8 @@
+{
+  "interaction": {
+    "type": "script",
+    "path": "/data/data/com.catcher.pogoauto/files/pokemon-go-hook.js",
+    "on_change": "reload"
+  },
+  "runtime": "v8"
+}

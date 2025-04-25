@@ -12,6 +12,30 @@
         tools:layout="@layout/fragment_home" />
 
     <fragment
+        android:id="@+id/nav_permissions"
+        android:name="com.catcher.pogoauto.ui.permissions.PermissionsFragment"
+        android:label="Permissions"
+        tools:layout="@layout/fragment_permissions" />
+
+    <fragment
+        android:id="@+id/nav_log_settings"
+        android:name="com.catcher.pogoauto.ui.logs.LogSettingsFragment"
+        android:label="Log Settings"
+        tools:layout="@layout/fragment_log_settings" />
+
+    <fragment
+        android:id="@+id/nav_trace_settings"
+        android:name="com.catcher.pogoauto.ui.logs.TraceSettingsFragment"
+        android:label="Trace Settings"
+        tools:layout="@layout/fragment_trace_settings" />
+
+    <fragment
+        android:id="@+id/nav_hook_settings"
+        android:name="com.catcher.pogoauto.ui.hooks.HookSettingsFragment"
+        android:label="Hook Settings"
+        tools:layout="@layout/fragment_hook_settings" />
+
+    <fragment
         android:id="@+id/nav_gallery"
         android:name="com.catcher.pogoauto.ui.gallery.GalleryFragment"
         android:label="@string/menu_gallery"
