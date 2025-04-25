@@ -29,7 +29,28 @@ android {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
                 this.storePassword = storePassword
-                this.storeFile = storeFile?.let { file(it) } ?: file("../keystore.jks")
+
+                // Look for the keystore file in multiple possible locations
+                val possibleLocations = listOf(
+                    "../keystore.jks",  // Root project directory
+                    "keystore.jks",     // App module directory
+                    "${rootProject.projectDir}/keystore.jks"  // Absolute path to root project directory
+                )
+
+                for (location in possibleLocations) {
+                    val keystoreFile = file(location)
+                    if (keystoreFile.exists()) {
+                        this.storeFile = keystoreFile
+                        println("Using keystore at: ${keystoreFile.absolutePath}")
+                        break
+                    }
+                }
+
+                // If no keystore was found, default to the root project directory
+                if (this.storeFile == null || !this.storeFile!!.exists()) {
+                    this.storeFile = file("../keystore.jks")
+                    println("No keystore found, defaulting to: ${this.storeFile!!.absolutePath}")
+                }
             }
         }
     }

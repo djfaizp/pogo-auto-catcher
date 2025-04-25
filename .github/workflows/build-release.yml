@@ -37,7 +37,30 @@ jobs:
 
       - name: Create keystore file
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > keystore.jks
+          # Create keystore file from base64-encoded secret
+          # Make sure the secret doesn't have any line breaks or spaces
+          echo "${{ secrets.RELEASE_KEYSTORE }}" > keystore.b64
+          # Clean up the file to ensure it's valid base64
+          tr -d '\n\r\t ' < keystore.b64 > keystore.clean.b64
+          # Decode the base64 content
+          base64 --decode keystore.clean.b64 > keystore.jks
+          # Check if the keystore file was created successfully
+          if [ ! -s keystore.jks ]; then
+            echo "Error: Failed to create keystore file. The base64 content might be invalid."
+            exit 1
+          fi
+
+          # Copy the keystore to the app directory as well (for redundancy)
+          mkdir -p app
+          cp keystore.jks app/keystore.jks
+
+          # Print the locations for debugging
+          echo "Keystore files created at:"
+          echo "- $(pwd)/keystore.jks"
+          echo "- $(pwd)/app/keystore.jks"
+
+          # Verify the files exist and have content
+          ls -la keystore.jks app/keystore.jks
 
       - name: Update version (if triggered manually)
         if: github.event_name == 'workflow_dispatch'
@@ -46,12 +69,40 @@ jobs:
           sed -i "s/versionCode = [0-9]*/versionCode = ${{ github.event.inputs.version_code }}/" app/build.gradle.kts
           sed -i "s/versionName = \"[^\"]*\"/versionName = \"${{ github.event.inputs.version_name }}\"/" app/build.gradle.kts
 
+      - name: Debug keystore setup
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Files in current directory:"
+          ls -la
+          echo "Files in app directory:"
+          ls -la app/
+          echo "Checking keystore files:"
+          if [ -f "keystore.jks" ]; then
+            echo "Root keystore exists with size: $(stat -c%s keystore.jks) bytes"
+          else
+            echo "Root keystore does not exist!"
+          fi
+          if [ -f "app/keystore.jks" ]; then
+            echo "App keystore exists with size: $(stat -c%s app/keystore.jks) bytes"
+          else
+            echo "App keystore does not exist!"
+          fi
+
       - name: Build release APK
-        run: ./gradlew assembleRelease
+        run: |
+          # Export environment variables for signing
+          export SIGNING_KEY_ALIAS="${{ secrets.SIGNING_KEY_ALIAS }}"
+          export SIGNING_KEY_PASSWORD="${{ secrets.SIGNING_KEY_PASSWORD }}"
+          export SIGNING_STORE_PASSWORD="${{ secrets.SIGNING_STORE_PASSWORD }}"
+          export SIGNING_STORE_FILE="keystore.jks"
+
+          # Run the build with detailed logging
+          ./gradlew assembleRelease --info --stacktrace
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_STORE_FILE: keystore.jks
 
       - name: Get version info
         id: version

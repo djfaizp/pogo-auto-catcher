@@ -77,6 +77,23 @@ For the automated release process to work, you need to set up the following secr
 - `SIGNING_KEY_PASSWORD`: The password for the key
 - `SIGNING_STORE_PASSWORD`: The password for the keystore
 
+#### Creating and Encoding a Keystore for GitHub
+
+##### Windows Users:
+1. Run the `create-keystore.bat` script to generate a keystore file
+2. Run the `encode-keystore-for-github.ps1` PowerShell script to encode it properly for GitHub
+3. Copy the content of the generated `keystore.github.txt` file
+4. Add this as the `RELEASE_KEYSTORE` secret in your GitHub repository
+
+##### Linux/Mac Users:
+1. Make the script executable: `chmod +x create-github-keystore.sh`
+2. Run the script: `./create-github-keystore.sh`
+3. Follow the prompts to create your keystore
+4. Copy the content of the generated `keystore.github.txt` file
+5. Add this as the `RELEASE_KEYSTORE` secret in your GitHub repository
+
+**Important**: The base64-encoded keystore must be a single line with no spaces or line breaks.
+
 ### Using the App
 
 1. Launch the app
