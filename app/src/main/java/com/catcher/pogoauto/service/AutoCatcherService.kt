@@ -1,5 +1,6 @@
 package com.catcher.pogoauto.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,11 +8,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.catcher.pogoauto.FridaScriptManager
 import com.catcher.pogoauto.MainActivity
 import com.catcher.pogoauto.R
@@ -84,16 +89,17 @@ class AutoCatcherService : Service() {
         // Create notification channel for Android 8.0+
         createNotificationChannel()
 
-        // Ensure Frida gadget library is available
-        if (!LibraryUtils.checkFridaGadgetLibrary(this)) {
-            LogUtils.i(TAG, "Frida gadget library not found in app's native library directory, copying from custom path")
-            if (LibraryUtils.copyFridaGadgetLibrary(this)) {
-                LogUtils.i(TAG, "Successfully copied Frida gadget library to app's native library directory")
+        // Check if Frida server is installed and running
+        if (!LibraryUtils.isFridaServerInstalled()) {
+            LogUtils.i(TAG, "Frida server not installed, extracting from assets")
+            val extractedPath = LibraryUtils.extractFridaServerFromAssets(this)
+            if (extractedPath != null) {
+                LogUtils.i(TAG, "Successfully extracted Frida server from assets: $extractedPath")
             } else {
-                LogUtils.e(TAG, "Failed to copy Frida gadget library to app's native library directory")
+                LogUtils.e(TAG, "Failed to extract Frida server from assets")
             }
         } else {
-            LogUtils.i(TAG, "Frida gadget library already exists in app's native library directory")
+            LogUtils.i(TAG, "Frida server is already installed")
         }
 
         // Extract Frida scripts
@@ -108,7 +114,66 @@ class AutoCatcherService : Service() {
         LogUtils.i(TAG, "Service onStartCommand: ${intent?.action}")
 
         when (intent?.action) {
-            ACTION_START_SERVICE -> startForegroundService()
+            ACTION_START_SERVICE -> {
+                // Direct approach to start foreground service with DATA_SYNC type only
+                try {
+                    // Acquire wake lock to keep CPU running
+                    acquireWakeLock()
+
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
+                            // Use both DATA_SYNC and CONNECTED_DEVICE types for Android 14+
+                            LogUtils.i(TAG, "Starting foreground service with DATA_SYNC and CONNECTED_DEVICE types on Android 14+")
+                            startForeground(NOTIFICATION_ID, createNotification(),
+                                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                        } else {
+                            LogUtils.i(TAG, "Starting foreground service with default type")
+                            startForeground(NOTIFICATION_ID, createNotification())
+                        }
+                    } catch (e: SecurityException) {
+                        LogUtils.e(TAG, "Error starting foreground service", e)
+                        // Fall back to DATA_SYNC type only
+                        try {
+                            LogUtils.i(TAG, "Falling back to starting foreground service with DATA_SYNC type only")
+                            startForeground(NOTIFICATION_ID, createNotification(),
+                                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                        } catch (e2: Exception) {
+                            LogUtils.e(TAG, "Error starting foreground service with DATA_SYNC type", e2)
+                            // Last resort - try without a type
+                            try {
+                                LogUtils.i(TAG, "Falling back to starting foreground service without a type")
+                                startForeground(NOTIFICATION_ID, createNotification())
+                            } catch (e3: Exception) {
+                                LogUtils.e(TAG, "Error starting foreground service without a type", e3)
+                                // Last resort - try to keep the service running without foreground
+                                Toast.makeText(applicationContext,
+                                    "Failed to start foreground service. App may be killed in background.",
+                                    Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+
+                    // Set service status
+                    serviceStatus = STATUS_RUNNING
+                    isRunning.set(true)
+
+                    // Start log capture and monitoring
+                    startLogCapture()
+                    startMonitoring()
+
+                    // Start Zygote monitoring
+                    if (fridaScriptManager.startZygoteMonitoring()) {
+                        LogUtils.i(TAG, "Zygote monitoring started successfully")
+                    } else {
+                        LogUtils.e(TAG, "Failed to start Zygote monitoring")
+                    }
+
+                    LogUtils.i(TAG, "Foreground service started successfully")
+                } catch (e: Exception) {
+                    LogUtils.e(TAG, "Error starting foreground service: ${e.message}", e)
+                    stopSelf()
+                }
+            }
             ACTION_STOP_SERVICE -> stopService()
             ACTION_STOP_POKEMON_GO -> stopPokemonGo()
         }
@@ -160,43 +225,9 @@ class AutoCatcherService : Service() {
         }
     }
 
-    /**
-     * Start the service in foreground mode
-     */
-    private fun startForegroundService() {
-        if (isRunning.get()) {
-            LogUtils.i(TAG, "Service already running, updating notification")
-            updateNotification()
-            return
-        }
-
-        LogUtils.i(TAG, "Starting foreground service")
-
-        // Acquire wake lock to keep CPU running
-        acquireWakeLock()
-
-        // Start as foreground service with notification
-        startForeground(NOTIFICATION_ID, createNotification())
-
-        // Set service status
-        serviceStatus = STATUS_RUNNING
-        isRunning.set(true)
-
-        // Start log capture
-        startLogCapture()
-
-        // Start monitoring
-        startMonitoring()
-
-        // Start Zygote monitoring
-        if (fridaScriptManager.startZygoteMonitoring()) {
-            LogUtils.i(TAG, "Zygote monitoring started successfully")
-        } else {
-            LogUtils.e(TAG, "Failed to start Zygote monitoring")
-        }
-
-        LogUtils.i(TAG, "Foreground service started")
-    }
+    // The startForegroundService method has been removed and its functionality
+    // has been moved directly into onStartCommand and launchPokemonGo methods
+    // to ensure consistent foreground service type usage.
 
     /**
      * Stop the service
@@ -309,18 +340,38 @@ class AutoCatcherService : Service() {
      * Acquire wake lock to keep CPU running
      */
     private fun acquireWakeLock() {
-        if (wakeLock == null) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "PogoAutoCatcher:WakeLock"
-            )
-            wakeLock?.setReferenceCounted(false)
+        // Check if we have the WAKE_LOCK permission
+        val hasWakeLockPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.WAKE_LOCK
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasWakeLockPermission) {
+            LogUtils.e(TAG, "WAKE_LOCK permission not granted. Cannot acquire wake lock.")
+            // Continue without wake lock
+            return
         }
 
-        if (wakeLock?.isHeld == false) {
-            wakeLock?.acquire(10*60*1000L /*10 minutes*/)
-            LogUtils.i(TAG, "Wake lock acquired")
+        try {
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "PogoAutoCatcher:WakeLock"
+                )
+                wakeLock?.setReferenceCounted(false)
+            }
+
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(10*60*1000L /*10 minutes*/)
+                LogUtils.i(TAG, "Wake lock acquired")
+            }
+        } catch (e: SecurityException) {
+            LogUtils.e(TAG, "Security exception when acquiring wake lock: ${e.message}", e)
+            // Continue without wake lock
+        } catch (e: Exception) {
+            LogUtils.e(TAG, "Error acquiring wake lock: ${e.message}", e)
+            // Continue without wake lock
         }
     }
 
@@ -545,7 +596,60 @@ class AutoCatcherService : Service() {
 
         // Make sure service is running in foreground
         if (!isRunning.get()) {
-            startForegroundService()
+            try {
+                // Direct approach to start foreground service with DATA_SYNC type only
+                // Acquire wake lock to keep CPU running
+                acquireWakeLock()
+
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
+                        // Use both DATA_SYNC and CONNECTED_DEVICE types for Android 14+
+                        LogUtils.i(TAG, "Starting foreground service with DATA_SYNC and CONNECTED_DEVICE types on Android 14+")
+                        startForeground(NOTIFICATION_ID, createNotification(),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                    } else {
+                        LogUtils.i(TAG, "Starting foreground service with default type")
+                        startForeground(NOTIFICATION_ID, createNotification())
+                    }
+                } catch (e: SecurityException) {
+                    LogUtils.e(TAG, "Error starting foreground service", e)
+                    // Fall back to DATA_SYNC type only
+                    try {
+                        LogUtils.i(TAG, "Falling back to starting foreground service with DATA_SYNC type only")
+                        startForeground(NOTIFICATION_ID, createNotification(),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } catch (e2: Exception) {
+                        LogUtils.e(TAG, "Error starting foreground service with DATA_SYNC type", e2)
+                        // Last resort - try without a type
+                        try {
+                            LogUtils.i(TAG, "Falling back to starting foreground service without a type")
+                            startForeground(NOTIFICATION_ID, createNotification())
+                        } catch (e3: Exception) {
+                            LogUtils.e(TAG, "Error starting foreground service without a type", e3)
+                            // Last resort - try to keep the service running without foreground
+                            Toast.makeText(applicationContext,
+                                "Failed to start foreground service. App may be killed in background.",
+                                Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+
+                // Set service status
+                serviceStatus = STATUS_RUNNING
+                isRunning.set(true)
+
+                // Start log capture and monitoring if not already running
+                if (!isCapturingLogs.get()) {
+                    startLogCapture()
+                }
+                if (!isMonitoring.get()) {
+                    startMonitoring()
+                }
+
+                LogUtils.i(TAG, "Foreground service started successfully in launchPokemonGo")
+            } catch (e: Exception) {
+                LogUtils.e(TAG, "Error starting foreground service in launchPokemonGo: ${e.message}", e)
+            }
         }
 
         // Launch Pokémon GO

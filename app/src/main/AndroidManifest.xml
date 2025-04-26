@@ -25,6 +25,20 @@
     <!-- Root-related permissions -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Specific foreground service type permissions for Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Connected device permissions required for Android 15 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.NFC" />
+
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Notification permission for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -53,7 +67,7 @@
         android:usesCleartextTraffic="true"
         android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
-        tools:targetApi="31">
+        tools:targetApi="35">
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -81,7 +95,7 @@
             android:name=".service.AutoCatcherService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|connectedDevice" />
     </application>
 
 </manifest>

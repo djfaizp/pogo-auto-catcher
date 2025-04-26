@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import com.catcher.pogoauto.utils.LogUtils
+import com.catcher.pogoauto.utils.LibraryUtils
 import com.catcher.pogoauto.zygote.ZygoteMonitor
 
 /**
@@ -19,8 +20,8 @@ class FridaScriptManager(private val context: Context) {
     companion object {
         private const val TAG = "FridaScriptManager"
         const val SCRIPT_FILENAME = "pokemon-go-hook.js"
-        const val CONFIG_FILENAME = "frida-gadget-config.json"
         const val ZYGOTE_SCRIPT_FILENAME = "zygote-monitor.js"
+        const val BYPASS_SCRIPT_FILENAME = "frida-detection-bypass.js"
         const val FRIDA_PORT = 27042
 
         // List of possible Pokémon GO package names
@@ -59,19 +60,19 @@ class FridaScriptManager(private val context: Context) {
     private var isCapturingLogs = false
 
     /**
-     * Extracts the Frida script and configuration from assets to the app's files directory
+     * Extracts the Frida scripts from assets to the app's files directory
      * @return true if successful, false otherwise
      */
     fun extractScriptFromAssets(): Boolean {
         LogUtils.i(TAG, "Starting Frida script extraction process")
         val startTime = System.currentTimeMillis()
         var tsScript = ""
-        var configJson = ""
         var jsScript = ""
         var zygoteScript = ""
+        var bypassScript = ""
         var scriptFile: File? = null
-        var configFile: File? = null
         var zygoteScriptFile: File? = null
+        var bypassScriptFile: File? = null
 
         try {
             // Extract the TypeScript file
@@ -86,18 +87,6 @@ class FridaScriptManager(private val context: Context) {
                 return false
             }
 
-            // Extract the configuration file
-            LogUtils.d(TAG, "Reading configuration file from assets")
-            val configStartTime = System.currentTimeMillis()
-            try {
-                configJson = context.assets.open("frida-gadget-config.json").bufferedReader().use { it.readText() }
-                val configTime = System.currentTimeMillis() - configStartTime
-                LogUtils.d(TAG, "Configuration file read successfully (${configJson.length} bytes, ${configTime}ms)")
-            } catch (e: IOException) {
-                LogUtils.e(TAG, "Failed to read configuration file from assets", e)
-                return false
-            }
-
             // Extract the Zygote monitor script
             LogUtils.d(TAG, "Reading Zygote monitor script from assets")
             val zygoteScriptStartTime = System.currentTimeMillis()
@@ -107,6 +96,18 @@ class FridaScriptManager(private val context: Context) {
                 LogUtils.d(TAG, "Zygote monitor script read successfully (${zygoteScript.length} bytes, ${zygoteScriptTime}ms)")
             } catch (e: IOException) {
                 LogUtils.e(TAG, "Failed to read Zygote monitor script from assets", e)
+                return false
+            }
+
+            // Extract the Frida detection bypass script
+            LogUtils.d(TAG, "Reading Frida detection bypass script from assets")
+            val bypassScriptStartTime = System.currentTimeMillis()
+            try {
+                bypassScript = context.assets.open("frida-detection-bypass.ts").bufferedReader().use { it.readText() }
+                val bypassScriptTime = System.currentTimeMillis() - bypassScriptStartTime
+                LogUtils.d(TAG, "Frida detection bypass script read successfully (${bypassScript.length} bytes, ${bypassScriptTime}ms)")
+            } catch (e: IOException) {
+                LogUtils.e(TAG, "Failed to read Frida detection bypass script from assets", e)
                 return false
             }
 
@@ -141,25 +142,6 @@ class FridaScriptManager(private val context: Context) {
                 return false
             }
 
-            // Write the configuration to the app's files directory
-            LogUtils.d(TAG, "Writing configuration file to app's files directory")
-            val configWriteStartTime = System.currentTimeMillis()
-            try {
-                configFile = File(context.filesDir, CONFIG_FILENAME)
-                FileOutputStream(configFile).use { it.write(configJson.toByteArray()) }
-                val configWriteTime = System.currentTimeMillis() - configWriteStartTime
-                LogUtils.d(TAG, "Configuration file written successfully (${configWriteTime}ms)")
-
-                // Verify the file was written correctly
-                if (!configFile.exists() || configFile.length() == 0L) {
-                    LogUtils.e(TAG, "Config file was not written correctly: exists=${configFile.exists()}, size=${configFile.length()}")
-                    return false
-                }
-            } catch (e: IOException) {
-                LogUtils.e(TAG, "Failed to write configuration file to app's files directory", e)
-                return false
-            }
-
             // Write the Zygote monitor script to the app's files directory
             LogUtils.d(TAG, "Writing Zygote monitor script to app's files directory")
             val zygoteScriptWriteStartTime = System.currentTimeMillis()
@@ -179,43 +161,44 @@ class FridaScriptManager(private val context: Context) {
                 return false
             }
 
-            // Verify the script path in the config matches the actual path
+            // Convert the Frida detection bypass script to JavaScript
+            LogUtils.d(TAG, "Converting Frida detection bypass script to JavaScript")
+            val bypassJsScript = convertTypeScriptToJavaScript(bypassScript)
+
+            // Write the Frida detection bypass script to the app's files directory
+            LogUtils.d(TAG, "Writing Frida detection bypass script to app's files directory")
+            val bypassScriptWriteStartTime = System.currentTimeMillis()
             try {
-                val expectedScriptPath = "/data/data/${context.packageName}/files/$SCRIPT_FILENAME"
-                if (!configJson.contains(expectedScriptPath)) {
-                    LogUtils.w(TAG, "Script path in config doesn't match expected path: expected=$expectedScriptPath")
+                bypassScriptFile = File(context.filesDir, BYPASS_SCRIPT_FILENAME)
+                FileOutputStream(bypassScriptFile).use { it.write(bypassJsScript.toByteArray()) }
+                val bypassScriptWriteTime = System.currentTimeMillis() - bypassScriptWriteStartTime
+                LogUtils.d(TAG, "Frida detection bypass script written successfully (${bypassScriptWriteTime}ms)")
 
-                    // Try to fix the config
-                    val updatedConfig = configJson.replace(
-                        "\"path\": \"/data/data/com.catcher.pogoauto/files/pokemon-go-hook.js\"",
-                        "\"path\": \"$expectedScriptPath\""
-                    )
-
-                    if (updatedConfig != configJson) {
-                        LogUtils.i(TAG, "Updated config with correct script path")
-                        FileOutputStream(configFile).use { it.write(updatedConfig.toByteArray()) }
-                    }
+                // Verify the file was written correctly
+                if (!bypassScriptFile.exists() || bypassScriptFile.length() == 0L) {
+                    LogUtils.e(TAG, "Frida detection bypass script file was not written correctly: exists=${bypassScriptFile.exists()}, size=${bypassScriptFile.length()}")
+                    return false
                 }
-            } catch (e: Exception) {
-                LogUtils.e(TAG, "Error verifying script path in config", e)
-                // Continue anyway, this is just a verification step
+            } catch (e: IOException) {
+                LogUtils.e(TAG, "Failed to write Frida detection bypass script to app's files directory", e)
+                return false
             }
 
             val totalTime = System.currentTimeMillis() - startTime
             LogUtils.i(TAG, "Script extraction completed successfully in ${totalTime}ms")
             LogUtils.i(TAG, "Script extracted to ${scriptFile.absolutePath}")
-            LogUtils.i(TAG, "Config extracted to ${configFile?.absolutePath}")
             LogUtils.i(TAG, "Zygote monitor script extracted to ${zygoteScriptFile?.absolutePath}")
+            LogUtils.i(TAG, "Frida detection bypass script extracted to ${bypassScriptFile?.absolutePath}")
 
-            // Log script and config content for debugging
+            // Log script content for debugging
             LogUtils.d(TAG, "Script content (first 100 chars): ${jsScript.take(100)}...")
-            LogUtils.d(TAG, "Config content: $configJson")
             LogUtils.d(TAG, "Zygote monitor script content (first 100 chars): ${zygoteScript.take(100)}...")
+            LogUtils.d(TAG, "Frida detection bypass script content (first 100 chars): ${bypassJsScript.take(100)}...")
 
             return true
         } catch (e: Exception) {
             val totalTime = System.currentTimeMillis() - startTime
-            LogUtils.e(TAG, "Failed to extract script or config after ${totalTime}ms", e)
+            LogUtils.e(TAG, "Failed to extract scripts after ${totalTime}ms", e)
             return false
         }
     }
@@ -540,12 +523,20 @@ class FridaScriptManager(private val context: Context) {
     }
 
     /**
-     * Sets the delay before launching Pokemon GO
+     * Sets the delay before injecting the Frida script into Pokémon GO
+     * This delay is applied after Pokémon GO is launched but before the script is injected
+     * It gives the app time to initialize before the Frida script is injected
      * @param delay the delay in milliseconds
      */
     fun setInjectionDelay(delay: Int) {
         injectionDelay = delay
-        LogUtils.i(TAG, "Injection delay set to $delay ms")
+        LogUtils.i(TAG, "Frida script injection delay set to $delay ms")
+
+        // Make sure Frida Server is running
+        if (!LibraryUtils.isFridaServerRunning()) {
+            LogUtils.i(TAG, "Starting Frida Server for future injection")
+            LibraryUtils.startFridaServer(context)
+        }
     }
 
     /**
@@ -556,13 +547,7 @@ class FridaScriptManager(private val context: Context) {
         return File(context.filesDir, SCRIPT_FILENAME).absolutePath
     }
 
-    /**
-     * Gets the path to the extracted configuration
-     * @return the absolute path to the configuration
-     */
-    fun getConfigPath(): String {
-        return File(context.filesDir, CONFIG_FILENAME).absolutePath
-    }
+
 
     /**
      * Checks if the Pokémon GO app is installed
@@ -613,17 +598,6 @@ class FridaScriptManager(private val context: Context) {
     fun launchPokemonGo(): Boolean {
         LogUtils.i(TAG, "Starting Pokémon GO launch process")
         val startTime = System.currentTimeMillis()
-
-        // Apply injection delay if set
-        if (injectionDelay > 0) {
-            LogUtils.i(TAG, "Applying injection delay of $injectionDelay ms before launching Pokémon GO")
-            try {
-                Thread.sleep(injectionDelay.toLong())
-                LogUtils.d(TAG, "Injection delay completed")
-            } catch (e: InterruptedException) {
-                LogUtils.e(TAG, "Injection delay was interrupted", e)
-            }
-        }
 
         LogUtils.d(TAG, "Checking for Pokémon GO package")
 
@@ -1037,14 +1011,19 @@ class FridaScriptManager(private val context: Context) {
     }
 
     /**
-     * Check if Frida is properly loaded in Pokémon GO
+     * Check if Frida Server is running and properly connected to Pokémon GO
      * This uses direct ADB commands to check for Frida processes
-     * Enhanced with more comprehensive diagnostics
      */
     fun checkFridaStatus(): Boolean {
-        LogUtils.i(TAG, "Checking Frida status via ADB")
+        LogUtils.i(TAG, "Checking Frida Server status")
 
         try {
+            // First check if Frida server is running
+            if (!LibraryUtils.isFridaServerRunning()) {
+                LogUtils.e(TAG, "Frida server is not running")
+                return false
+            }
+
             // Get the Pokémon GO package name
             val packageName = getPokemonGoPackageName()
             if (packageName == null) {
@@ -1078,187 +1057,94 @@ class FridaScriptManager(private val context: Context) {
 
             LogUtils.d(TAG, "Pokémon GO is running with PID: $pid")
 
-            // Check for Frida in the process maps
-            val mapsProcess = Runtime.getRuntime().exec("cat /proc/$pid/maps")
-            val mapsReader = BufferedReader(InputStreamReader(mapsProcess.inputStream))
-            var fridaFound = false
-            val fridaLines = mutableListOf<String>()
+            // Try to list processes using frida-ps to check if Frida can see Pokémon GO
+            try {
+                val fridaPsCmd = "frida-ps -p $pid"
+                val fridaPsProcess = Runtime.getRuntime().exec(fridaPsCmd)
+                val fridaPsReader = BufferedReader(InputStreamReader(fridaPsProcess.inputStream))
+                val fridaPsOutput = fridaPsReader.readText()
 
-            while (mapsReader.readLine().also { line = it } != null) {
-                if (line?.contains("frida") == true || line?.contains("gadget") == true) {
-                    fridaFound = true
-                    fridaLines.add(line ?: "")
-                    LogUtils.i(TAG, "Frida found in process maps: $line")
-                }
-            }
+                if (fridaPsOutput.contains(packageName) || fridaPsOutput.contains(pid)) {
+                    LogUtils.i(TAG, "Frida can see Pokémon GO process: $fridaPsOutput")
 
-            // Check for any .so libraries loaded in the process
-            val soLibraries = mutableListOf<String>()
-            mapsReader.close()
-            val soMapsProcess = Runtime.getRuntime().exec("cat /proc/$pid/maps | grep \\.so")
-            val soMapsReader = BufferedReader(InputStreamReader(soMapsProcess.inputStream))
-            while (soMapsReader.readLine().also { line = it } != null) {
-                line?.let {
-                    soLibraries.add(it)
-                    LogUtils.d(TAG, "SO library in process: $it")
-                }
-            }
-            LogUtils.i(TAG, "Found ${soLibraries.size} .so libraries loaded in Pokémon GO")
+                    // Check if our script is being loaded
+                    try {
+                        val scriptPath = "/data/data/${context.packageName}/files/$SCRIPT_FILENAME"
+                        val checkScriptCmd = "ls -la $scriptPath"
+                        val scriptProcess = Runtime.getRuntime().exec(checkScriptCmd)
+                        val scriptReader = BufferedReader(InputStreamReader(scriptProcess.inputStream))
+                        val scriptOutput = scriptReader.readText()
 
-            if (fridaFound) {
-                LogUtils.i(TAG, "Frida is properly loaded in Pokémon GO")
-                LogUtils.i(TAG, "Found ${fridaLines.size} Frida-related entries in process maps")
+                        LogUtils.i(TAG, "Script file check: $scriptOutput")
 
-                // Check if our script is being loaded
-                try {
-                    val scriptPath = "/data/data/${context.packageName}/files/$SCRIPT_FILENAME"
-                    val checkScriptCmd = "ls -la $scriptPath"
-                    val scriptProcess = Runtime.getRuntime().exec(checkScriptCmd)
-                    val scriptReader = BufferedReader(InputStreamReader(scriptProcess.inputStream))
-                    val scriptOutput = scriptReader.readText()
+                        // Check if the script is being loaded by Frida
+                        val logcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i frida")
+                        val logcatReader = BufferedReader(InputStreamReader(logcatProcess.inputStream))
+                        val logcatOutput = logcatReader.readText()
 
-                    LogUtils.i(TAG, "Script file check: $scriptOutput")
+                        LogUtils.i(TAG, "Recent Frida logs from logcat: ${logcatOutput.take(500)}...")
 
-                    // Check if the script is being loaded by Frida
-                    val logcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i frida")
-                    val logcatReader = BufferedReader(InputStreamReader(logcatProcess.inputStream))
-                    val logcatOutput = logcatReader.readText()
+                        // Check if auto-catch is enabled in the script
+                        val scriptFile = File(context.filesDir, SCRIPT_FILENAME)
+                        if (scriptFile.exists()) {
+                            val scriptContent = scriptFile.readText()
+                            val autoCatchEnabled = scriptContent.contains("enabled: true")
+                            LogUtils.i(TAG, "Auto-catch enabled in script: $autoCatchEnabled")
+                        } else {
+                            LogUtils.w(TAG, "Script file does not exist at ${scriptFile.absolutePath}")
+                        }
 
-                    LogUtils.i(TAG, "Recent Frida logs from logcat: ${logcatOutput.take(500)}...")
+                        // Check for any Frida-related errors in logcat
+                        val errorLogcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i \"frida.*error\\|error.*frida\"")
+                        val errorLogcatReader = BufferedReader(InputStreamReader(errorLogcatProcess.inputStream))
+                        val errorLogcatOutput = errorLogcatReader.readText()
 
-                    // Check if auto-catch is enabled in the script
-                    val scriptFile = File(context.filesDir, SCRIPT_FILENAME)
-                    if (scriptFile.exists()) {
-                        val scriptContent = scriptFile.readText()
-                        val autoCatchEnabled = scriptContent.contains("enabled: true")
-                        LogUtils.i(TAG, "Auto-catch enabled in script: $autoCatchEnabled")
-                    } else {
-                        LogUtils.w(TAG, "Script file does not exist at ${scriptFile.absolutePath}")
-                    }
-
-                    // Check for any Frida-related errors in logcat
-                    val errorLogcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i \"frida.*error\\|error.*frida\"")
-                    val errorLogcatReader = BufferedReader(InputStreamReader(errorLogcatProcess.inputStream))
-                    val errorLogcatOutput = errorLogcatReader.readText()
-
-                    if (errorLogcatOutput.isNotEmpty()) {
-                        LogUtils.w(TAG, "Found Frida-related errors in logcat: ${errorLogcatOutput.take(500)}...")
-                    } else {
-                        LogUtils.i(TAG, "No Frida-related errors found in logcat")
+                        if (errorLogcatOutput.isNotEmpty()) {
+                            LogUtils.w(TAG, "Found Frida-related errors in logcat: ${errorLogcatOutput.take(500)}...")
+                        } else {
+                            LogUtils.i(TAG, "No Frida-related errors found in logcat")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error checking script status", e)
                     }
 
                     return true
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Error checking script status", e)
-                    return true // Still return true since Frida is loaded
+                } else {
+                    LogUtils.w(TAG, "Frida cannot see Pokémon GO process")
                 }
-            } else {
-                LogUtils.w(TAG, "Frida not found in Pokémon GO process maps")
-
-                // Additional diagnostics
-                try {
-                    // Check if the Frida gadget library exists in multiple possible locations
-                    val possibleLibPaths = listOf(
-                        "C:/Users/Alex/pogo-auto-catcher-1/app/src/main/jniLibs/arm64-v8a/libfrida-gadget.so", // Custom path
-                        context.applicationInfo.nativeLibraryDir + "/libfrida-gadget.so",
-                        "/data/data/${context.packageName}/lib/libfrida-gadget.so",
-                        "/data/app/~~*/com.catcher.pogoauto-*/lib/arm64/libfrida-gadget.so",
-                        "/data/data/${context.packageName}/app/src/main/jniLibs/arm64-v8a/libfrida-gadget.so"
-                    )
-
-                    var libFound = false
-                    for (libPath in possibleLibPaths) {
-                        try {
-                            val libFile = File(libPath)
-                            if (libFile.exists()) {
-                                LogUtils.i(TAG, "Frida gadget library exists at $libPath: size=${libFile.length()} bytes")
-                                libFound = true
-                            } else {
-                                // Try with wildcard expansion for app directory
-                                if (libPath.contains("~~*")) {
-                                    val baseDir = "/data/app/"
-                                    val dirProcess = Runtime.getRuntime().exec("ls -la $baseDir")
-                                    val dirReader = BufferedReader(InputStreamReader(dirProcess.inputStream))
-                                    var dirLine: String?
-                                    while (dirReader.readLine().also { dirLine = it } != null) {
-                                        if (dirLine?.contains("com.catcher.pogoauto") == true) {
-                                            val appDir = dirLine?.trim()?.split("\\s+".toRegex())?.lastOrNull()
-                                            if (appDir != null) {
-                                                val expandedPath = "$baseDir$appDir/lib/arm64/libfrida-gadget.so"
-                                                val expandedFile = File(expandedPath)
-                                                if (expandedFile.exists()) {
-                                                    LogUtils.i(TAG, "Frida gadget library exists at $expandedPath: size=${expandedFile.length()} bytes")
-                                                    libFound = true
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            LogUtils.e(TAG, "Error checking library at $libPath", e)
-                        }
-                    }
-
-                    if (!libFound) {
-                        LogUtils.e(TAG, "Frida gadget library not found in any expected location")
-                    }
-
-                    // Check if the script file exists
-                    val scriptFile = File(context.filesDir, SCRIPT_FILENAME)
-                    LogUtils.i(TAG, "Script file exists: ${scriptFile.exists()}, size: ${if (scriptFile.exists()) scriptFile.length() else 0} bytes")
-
-                    // Check if the config file exists
-                    val configFile = File(context.filesDir, CONFIG_FILENAME)
-                    LogUtils.i(TAG, "Config file exists: ${configFile.exists()}, size: ${if (configFile.exists()) configFile.length() else 0} bytes")
-
-                    // If config exists, verify its content
-                    if (configFile.exists()) {
-                        val configContent = configFile.readText()
-                        LogUtils.d(TAG, "Config content: $configContent")
-
-                        val expectedScriptPath = "/data/data/${context.packageName}/files/$SCRIPT_FILENAME"
-                        if (!configContent.contains(expectedScriptPath)) {
-                            LogUtils.w(TAG, "Config file does not contain the correct script path: $expectedScriptPath")
-                        }
-
-                        if (!configContent.contains("\"type\": \"script\"")) {
-                            LogUtils.w(TAG, "Config file does not have the correct interaction type (should be 'script')")
-                        }
-                    }
-
-                    // Check logcat for any Frida-related errors or messages
-                    val logcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i \"frida\\|gadget\\|error\\|library\\|load\\|so\"")
-                    val logcatReader = BufferedReader(InputStreamReader(logcatProcess.inputStream))
-                    val logcatOutput = logcatReader.readText()
-
-                    LogUtils.i(TAG, "Recent relevant logs from logcat: ${logcatOutput.take(1000)}...")
-
-                    // Check for library loading issues
-                    val libLoadProcess = Runtime.getRuntime().exec("logcat -d | grep -i \"library\\|load\\|dlopen\\|linker\"")
-                    val libLoadReader = BufferedReader(InputStreamReader(libLoadProcess.inputStream))
-                    val libLoadOutput = libLoadReader.readText()
-
-                    if (libLoadOutput.isNotEmpty()) {
-                        LogUtils.i(TAG, "Library loading logs: ${libLoadOutput.take(500)}...")
-                    }
-
-                    // Check if Pokémon GO has the right permissions to access our files
-                    try {
-                        val permProcess = Runtime.getRuntime().exec("ls -la /data/data/${context.packageName}/files/")
-                        val permReader = BufferedReader(InputStreamReader(permProcess.inputStream))
-                        val permOutput = permReader.readText()
-                        LogUtils.i(TAG, "Files directory permissions: $permOutput")
-                    } catch (e: Exception) {
-                        LogUtils.e(TAG, "Error checking file permissions", e)
-                    }
-
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Error in additional diagnostics", e)
-                }
-
-                return false
+            } catch (e: Exception) {
+                LogUtils.e(TAG, "Error running frida-ps", e)
             }
+
+            // Alternative check: Try to attach to the process using frida
+            try {
+                val attachCmd = "frida -p $pid"
+                val attachProcess = Runtime.getRuntime().exec(attachCmd)
+                // Wait a bit to see if it attaches
+                Thread.sleep(1000)
+                // Kill the process since we just want to check if it can attach
+                attachProcess.destroy()
+
+                // If we got here without an exception, Frida can probably attach to the process
+                LogUtils.i(TAG, "Frida can attach to Pokémon GO process")
+                return true
+            } catch (e: Exception) {
+                LogUtils.e(TAG, "Error attaching to Pokémon GO with Frida", e)
+            }
+
+            // Check logcat for any Frida-related messages
+            val logcatProcess = Runtime.getRuntime().exec("logcat -d | grep -i \"frida\\|server\\|script\\|inject\"")
+            val logcatReader = BufferedReader(InputStreamReader(logcatProcess.inputStream))
+            val logcatOutput = logcatReader.readText()
+
+            if (logcatOutput.isNotEmpty()) {
+                LogUtils.i(TAG, "Found Frida-related logs: ${logcatOutput.take(500)}...")
+                // If we have Frida logs, it might be working
+                return true
+            }
+
+            LogUtils.w(TAG, "No evidence that Frida is connected to Pokémon GO")
+            return false
 
         } catch (e: Exception) {
             LogUtils.e(TAG, "Error checking Frida status", e)
@@ -1431,6 +1317,32 @@ class FridaScriptManager(private val context: Context) {
                 return false
             }
 
+            // Check if Frida server is installed and running
+            if (!LibraryUtils.isFridaServerInstalled(context)) {
+                LogUtils.i(TAG, "Frida server is not installed, extracting and installing from assets")
+
+                // Extract and install Frida server from assets
+                val extractedPath = LibraryUtils.extractFridaServerFromAssets(context)
+                if (extractedPath == null) {
+                    LogUtils.e(TAG, "Failed to extract Frida server from assets")
+                    return false
+                }
+
+                // Set executable permissions
+                if (!LibraryUtils.setFridaServerPermissions(context, extractedPath)) {
+                    LogUtils.e(TAG, "Failed to set permissions on Frida server at ${LibraryUtils.getFridaServerPath(context)}")
+                    return false
+                }
+            }
+
+            // Start Frida server if it's not already running
+            if (!LibraryUtils.isFridaServerRunning()) {
+                if (!LibraryUtils.startFridaServer(context)) {
+                    LogUtils.e(TAG, "Failed to start Frida server")
+                    return false
+                }
+            }
+
             // Start the Zygote monitor
             zygoteMonitor.startMonitoring { packageName, pid ->
                 LogUtils.i(TAG, "Pokémon GO detected: $packageName (PID: $pid)")
@@ -1438,9 +1350,6 @@ class FridaScriptManager(private val context: Context) {
                 // Inject the Frida script into the process
                 injectFridaScript(packageName, pid)
             }
-
-            // Also start the Frida server to listen for connections
-            startFridaServer()
 
             return true
         } catch (e: Exception) {
@@ -1455,115 +1364,20 @@ class FridaScriptManager(private val context: Context) {
     fun stopZygoteMonitoring() {
         LogUtils.i(TAG, "Stopping Zygote monitoring")
         zygoteMonitor.stopMonitoring()
-        stopFridaServer()
+
+        // We don't stop the Frida server here as it might be used by other apps
+        // If you want to stop it, uncomment the line below
+        // LibraryUtils.stopFridaServer()
     }
 
     /**
-     * Start the Frida server to listen for connections
-     * @return true if successful, false otherwise
-     */
-    private fun startFridaServer(): Boolean {
-        LogUtils.i(TAG, "Starting Frida server")
-
-        try {
-            // Check if frida-server is already running
-            val checkCmd = "ps | grep frida-server"
-            val checkProcess = Runtime.getRuntime().exec(checkCmd)
-            val checkReader = BufferedReader(InputStreamReader(checkProcess.inputStream))
-            var isRunning = false
-
-            var line: String?
-            while (checkReader.readLine().also { line = it } != null) {
-                if (line?.contains("frida-server") == true && line.contains("grep") != true) {
-                    isRunning = true
-                    break
-                }
-            }
-
-            if (isRunning) {
-                LogUtils.i(TAG, "Frida server is already running")
-                return true
-            }
-
-            // Start frida-server
-            val startCmd = "frida-server -l 127.0.0.1:$FRIDA_PORT"
-            val process = Runtime.getRuntime().exec(startCmd)
-
-            // Check if the server started successfully
-            Thread.sleep(1000) // Wait a bit for the server to start
-
-            val checkAgainCmd = "ps | grep frida-server"
-            val checkAgainProcess = Runtime.getRuntime().exec(checkAgainCmd)
-            val checkAgainReader = BufferedReader(InputStreamReader(checkAgainProcess.inputStream))
-            var serverRunning = false
-
-            while (checkAgainReader.readLine().also { line = it } != null) {
-                if (line?.contains("frida-server") == true && line.contains("grep") != true) {
-                    serverRunning = true
-                    break
-                }
-            }
-
-            if (serverRunning) {
-                LogUtils.i(TAG, "Frida server started successfully")
-                return true
-            } else {
-                LogUtils.e(TAG, "Failed to start Frida server")
-                return false
-            }
-        } catch (e: Exception) {
-            LogUtils.e(TAG, "Error starting Frida server", e)
-            return false
-        }
-    }
-
-    /**
-     * Stop the Frida server
-     */
-    private fun stopFridaServer() {
-        LogUtils.i(TAG, "Stopping Frida server")
-
-        try {
-            // Find the frida-server process
-            val findCmd = "ps | grep frida-server"
-            val findProcess = Runtime.getRuntime().exec(findCmd)
-            val reader = BufferedReader(InputStreamReader(findProcess.inputStream))
-            var line: String?
-            var pid: String? = null
-
-            while (reader.readLine().also { line = it } != null) {
-                if (line?.contains("frida-server") == true && line.contains("grep") != true) {
-                    // Extract the PID (second column in ps output)
-                    val parts = line?.trim()?.split("\\s+".toRegex())
-                    if (parts != null && parts.size > 1) {
-                        pid = parts[1]
-                        break
-                    }
-                }
-            }
-
-            // Kill the process if we found a PID
-            if (pid != null) {
-                val killCmd = "kill -9 $pid"
-                val killProcess = Runtime.getRuntime().exec(killCmd)
-                val result = killProcess.waitFor()
-                LogUtils.i(TAG, "Frida server kill command result: $result")
-            } else {
-                LogUtils.i(TAG, "Frida server not found running")
-            }
-        } catch (e: Exception) {
-            LogUtils.e(TAG, "Error stopping Frida server", e)
-        }
-    }
-
-    /**
-     * Inject the Frida script into a running Pokémon GO process
+     * Inject the Frida script into a running Pokémon GO process using Frida Server
      * @param packageName The package name of the Pokémon GO process
      * @param pid The process ID of the Pokémon GO process
      * @return true if successful, false otherwise
      */
     private fun injectFridaScript(packageName: String, pid: Int): Boolean {
-        LogUtils.i(TAG, "Injecting Frida script into Pokémon GO process: $packageName (PID: $pid)")
+        LogUtils.i(TAG, "Preparing to inject Frida script into Pokémon GO process: $packageName (PID: $pid)")
 
         try {
             // First verify the process is still running
@@ -1579,31 +1393,57 @@ class FridaScriptManager(private val context: Context) {
                 return false
             }
 
+            // Check if the Frida detection bypass script exists
+            val bypassScriptFile = File(context.filesDir, BYPASS_SCRIPT_FILENAME)
+            if (!bypassScriptFile.exists() || bypassScriptFile.length() == 0L) {
+                LogUtils.e(TAG, "Frida detection bypass script file missing or empty: ${bypassScriptFile.absolutePath}")
+                return false
+            }
+
             LogUtils.i(TAG, "Script file exists at ${scriptFile.absolutePath}, size: ${scriptFile.length()} bytes")
+            LogUtils.i(TAG, "Frida detection bypass script exists at ${bypassScriptFile.absolutePath}, size: ${bypassScriptFile.length()} bytes")
 
-            // Try multiple injection methods
+            // Make sure Frida server is running
+            if (!LibraryUtils.isFridaServerRunning()) {
+                LogUtils.w(TAG, "Frida server is not running, attempting to start it")
+                if (!LibraryUtils.startFridaServer(context)) {
+                    LogUtils.e(TAG, "Failed to start Frida server, cannot inject script")
+                    return false
+                }
+            }
 
-            // Method 1: Using frida-inject command
+            // Apply injection delay if set
+            if (injectionDelay > 0) {
+                LogUtils.i(TAG, "Applying injection delay of $injectionDelay ms before injecting Frida script")
+                try {
+                    Thread.sleep(injectionDelay.toLong())
+                    LogUtils.d(TAG, "Injection delay completed, now injecting script")
+                } catch (e: InterruptedException) {
+                    LogUtils.e(TAG, "Injection delay was interrupted", e)
+                }
+            }
+
+            // First inject the Frida detection bypass script
             try {
-                LogUtils.i(TAG, "Trying injection method 1: frida-inject")
-                val injectCmd = "frida-inject -p $pid -s ${scriptFile.absolutePath} --runtime=v8"
-                LogUtils.d(TAG, "Running command: $injectCmd")
+                LogUtils.i(TAG, "Injecting Frida detection bypass script first")
+                val bypassInjectCmd = "frida -p $pid -l ${bypassScriptFile.absolutePath} --runtime=v8"
+                LogUtils.d(TAG, "Running bypass command: $bypassInjectCmd")
 
-                val process = Runtime.getRuntime().exec(injectCmd)
+                val bypassProcess = Runtime.getRuntime().exec(bypassInjectCmd)
 
-                // Read the output to check if injection was successful
-                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+                // Read the output to check if bypass injection was successful
+                val bypassReader = BufferedReader(InputStreamReader(bypassProcess.inputStream))
+                val bypassErrorReader = BufferedReader(InputStreamReader(bypassProcess.errorStream))
 
                 // Start a thread to read the output
                 Thread {
                     try {
                         var line: String?
-                        while (reader.readLine().also { line = it } != null) {
-                            LogUtils.i(TAG, "Frida inject output: $line")
+                        while (bypassReader.readLine().also { line = it } != null) {
+                            LogUtils.i(TAG, "Frida bypass output: $line")
                         }
                     } catch (e: Exception) {
-                        LogUtils.e(TAG, "Error reading Frida inject output", e)
+                        LogUtils.e(TAG, "Error reading Frida bypass output", e)
                     }
                 }.start()
 
@@ -1611,43 +1451,26 @@ class FridaScriptManager(private val context: Context) {
                 Thread {
                     try {
                         var line: String?
-                        while (errorReader.readLine().also { line = it } != null) {
-                            LogUtils.e(TAG, "Frida inject error: $line")
+                        while (bypassErrorReader.readLine().also { line = it } != null) {
+                            LogUtils.e(TAG, "Frida bypass error: $line")
                         }
                     } catch (e: Exception) {
-                        LogUtils.e(TAG, "Error reading Frida inject error output", e)
+                        LogUtils.e(TAG, "Error reading Frida bypass error output", e)
                     }
                 }.start()
 
-                // Wait a bit to see if there are any immediate errors
-                Thread.sleep(2000)
+                // Wait a bit to let the bypass script initialize
+                Thread.sleep(1000)
 
-                // Check if the process is still running
-                try {
-                    val exitCode = process.exitValue()
-                    LogUtils.w(TAG, "Frida inject process exited with code: $exitCode")
-                    // If exit code is 0, it might have completed successfully
-                    if (exitCode == 0) {
-                        LogUtils.i(TAG, "Frida inject process completed successfully")
-                        return true
-                    }
-                    // If we got here with a non-zero exit code, try the next method
-                    LogUtils.w(TAG, "Frida inject method 1 failed with exit code: $exitCode, trying method 2")
-                } catch (e: IllegalThreadStateException) {
-                    // Process is still running, which is good
-                    LogUtils.i(TAG, "Frida inject process is still running, injection likely successful")
-                    return true
-                }
-
-                // Continue to next method
+                LogUtils.i(TAG, "Frida detection bypass script injected, now injecting main script")
             } catch (e: Exception) {
-                LogUtils.e(TAG, "Error with injection method 1", e)
-                // Continue to next method
+                LogUtils.e(TAG, "Error injecting Frida detection bypass script", e)
+                // Continue anyway to try the main script
             }
 
-            // Method 2: Using frida command
+            // Now try injection of the main script using frida command
             try {
-                LogUtils.i(TAG, "Trying injection method 2: frida")
+                LogUtils.i(TAG, "Injecting main script using frida command")
                 val injectCmd = "frida -p $pid -l ${scriptFile.absolutePath} --runtime=v8"
                 LogUtils.d(TAG, "Running command: $injectCmd")
 
@@ -1693,86 +1516,121 @@ class FridaScriptManager(private val context: Context) {
                         LogUtils.i(TAG, "Frida process completed successfully")
                         return true
                     }
-                    // If we got here with a non-zero exit code, try the next method
-                    LogUtils.w(TAG, "Frida method 2 failed with exit code: $exitCode, trying method 3")
+
+                    // If we got here with a non-zero exit code, try the alternative method
+                    LogUtils.w(TAG, "Frida command failed with exit code: $exitCode, trying alternative method")
                 } catch (e: IllegalThreadStateException) {
                     // Process is still running, which is good
                     LogUtils.i(TAG, "Frida process is still running, injection likely successful")
                     return true
                 }
-
-                // Continue to next method
             } catch (e: Exception) {
-                LogUtils.e(TAG, "Error with injection method 2", e)
-                // Continue to next method
+                LogUtils.e(TAG, "Error with frida command injection", e)
+                // Continue to alternative method
             }
 
-            // Method 3: Using Frida gadget config file
+            // Alternative method: Using frida-inject command
             try {
-                LogUtils.i(TAG, "Trying injection method 3: Frida gadget config")
+                // First inject the bypass script
+                LogUtils.i(TAG, "Trying alternative injection method for bypass script: frida-inject")
+                val bypassInjectCmd = "frida-inject -p $pid -s ${bypassScriptFile.absolutePath} --runtime=v8"
+                LogUtils.d(TAG, "Running bypass command: $bypassInjectCmd")
 
-                // Check if the config file exists
-                val configFile = File(context.filesDir, CONFIG_FILENAME)
-                if (!configFile.exists() || configFile.length() == 0L) {
-                    LogUtils.e(TAG, "Config file missing or empty: ${configFile.absolutePath}")
-                } else {
-                    LogUtils.i(TAG, "Config file exists at ${configFile.absolutePath}, size: ${configFile.length()} bytes")
+                val bypassProcess = Runtime.getRuntime().exec(bypassInjectCmd)
 
-                    // Read the config file to verify it's correct
-                    val configContent = configFile.readText()
-                    LogUtils.d(TAG, "Config content: $configContent")
+                // Read the output to check if bypass injection was successful
+                val bypassReader = BufferedReader(InputStreamReader(bypassProcess.inputStream))
+                val bypassErrorReader = BufferedReader(InputStreamReader(bypassProcess.errorStream))
 
-                    // Verify the script path in the config
-                    val expectedScriptPath = "/data/data/${context.packageName}/files/$SCRIPT_FILENAME"
-                    if (!configContent.contains(expectedScriptPath)) {
-                        LogUtils.w(TAG, "Config file does not contain the correct script path: $expectedScriptPath")
-
-                        // Try to fix the config
-                        val updatedConfig = configContent.replace(
-                            "\"path\": \"/data/data/com.catcher.pogoauto/files/pokemon-go-hook.js\"",
-                            "\"path\": \"$expectedScriptPath\""
-                        )
-
-                        if (updatedConfig != configContent) {
-                            LogUtils.i(TAG, "Updated config with correct script path")
-                            FileOutputStream(configFile).use { it.write(updatedConfig.toByteArray()) }
-                        }
-                    }
-
-                    // Try to copy the config file to a location where Frida gadget might look for it
+                // Start a thread to read the output
+                Thread {
                     try {
-                        val targetConfigDir = File("/data/local/tmp/frida")
-                        if (!targetConfigDir.exists()) {
-                            targetConfigDir.mkdirs()
+                        var line: String?
+                        while (bypassReader.readLine().also { line = it } != null) {
+                            LogUtils.i(TAG, "Frida bypass inject output: $line")
                         }
-
-                        val targetConfigFile = File(targetConfigDir, "gadget-config.json")
-                        configFile.copyTo(targetConfigFile, overwrite = true)
-
-                        // Set permissions
-                        Runtime.getRuntime().exec("chmod 644 ${targetConfigFile.absolutePath}")
-
-                        LogUtils.i(TAG, "Copied config file to ${targetConfigFile.absolutePath}")
                     } catch (e: Exception) {
-                        LogUtils.e(TAG, "Error copying config file to /data/local/tmp/frida", e)
+                        LogUtils.e(TAG, "Error reading Frida bypass inject output", e)
                     }
+                }.start()
 
-                    // Wait a bit to see if Frida gadget picks up the config
-                    Thread.sleep(5000)
+                // Start a thread to read the error output
+                Thread {
+                    try {
+                        var line: String?
+                        while (bypassErrorReader.readLine().also { line = it } != null) {
+                            LogUtils.e(TAG, "Frida bypass inject error: $line")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error reading Frida bypass inject error output", e)
+                    }
+                }.start()
 
-                    // Check if Frida is loaded in the process
-                    if (checkFridaStatus()) {
-                        LogUtils.i(TAG, "Frida appears to be loaded in the process")
+                // Wait a bit to let the bypass script initialize
+                Thread.sleep(1000)
+
+                LogUtils.i(TAG, "Frida detection bypass script injected using alternative method, now injecting main script")
+
+                // Now inject the main script
+                LogUtils.i(TAG, "Trying alternative injection method for main script: frida-inject")
+                val injectCmd = "frida-inject -p $pid -s ${scriptFile.absolutePath} --runtime=v8"
+                LogUtils.d(TAG, "Running command: $injectCmd")
+
+                val process = Runtime.getRuntime().exec(injectCmd)
+
+                // Read the output to check if injection was successful
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+
+                // Start a thread to read the output
+                Thread {
+                    try {
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            LogUtils.i(TAG, "Frida inject output: $line")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error reading Frida inject output", e)
+                    }
+                }.start()
+
+                // Start a thread to read the error output
+                Thread {
+                    try {
+                        var line: String?
+                        while (errorReader.readLine().also { line = it } != null) {
+                            LogUtils.e(TAG, "Frida inject error: $line")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error reading Frida inject error output", e)
+                    }
+                }.start()
+
+                // Wait a bit to see if there are any immediate errors
+                Thread.sleep(2000)
+
+                // Check if the process is still running
+                try {
+                    val exitCode = process.exitValue()
+                    LogUtils.w(TAG, "Frida inject process exited with code: $exitCode")
+                    // If exit code is 0, it might have completed successfully
+                    if (exitCode == 0) {
+                        LogUtils.i(TAG, "Frida inject process completed successfully")
                         return true
                     }
+
+                    // If we got here with a non-zero exit code, all methods failed
+                    LogUtils.e(TAG, "All injection methods failed")
+                    return false
+                } catch (e: IllegalThreadStateException) {
+                    // Process is still running, which is good
+                    LogUtils.i(TAG, "Frida inject process is still running, injection likely successful")
+                    return true
                 }
             } catch (e: Exception) {
-                LogUtils.e(TAG, "Error with injection method 3", e)
+                LogUtils.e(TAG, "Error with alternative injection method", e)
+                return false
             }
-
-            // If we got here, all methods failed
-            LogUtils.e(TAG, "All injection methods failed")
-            return false
         } catch (e: Exception) {
             LogUtils.e(TAG, "Error injecting Frida script", e)
             return false

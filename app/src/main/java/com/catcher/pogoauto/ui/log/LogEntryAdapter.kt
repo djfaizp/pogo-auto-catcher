@@ -188,6 +188,21 @@ class LogEntryAdapter : RecyclerView.Adapter<LogEntryAdapter.LogViewHolder>() {
     }
 
     /**
+     * Select all filters
+     */
+    fun selectAllFilters() {
+        // Add all categories to active filters
+        activeFilters.clear()
+        activeFilters.addAll(categoryColors.keys)
+
+        // Apply filters
+        applyFilters()
+
+        // Notify the adapter
+        notifyDataSetChanged()
+    }
+
+    /**
      * Get all available categories
      */
     fun getCategories(): Set<String> {

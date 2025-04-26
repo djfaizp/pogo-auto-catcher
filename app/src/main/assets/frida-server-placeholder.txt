@@ -1,0 +1,12 @@
+This is a placeholder file. Replace this with the actual Frida Server binary for your target architecture.
+
+Common architectures:
+- arm64-v8a (most modern Android devices)
+- armeabi-v7a (older Android devices)
+- x86_64 (emulators)
+- x86 (older emulators)
+
+Download the appropriate Frida Server binary from:
+https://github.com/frida/frida/releases
+
+Rename the downloaded binary to "frida-server" (without any extension) and replace this file.

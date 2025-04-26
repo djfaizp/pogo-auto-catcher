@@ -61,13 +61,13 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="Configure the delay before injecting Frida into Pokémon GO" />
+                        android:text="Configure the delay after Pokémon GO launches but before the Frida script is injected" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="Injection Delay (ms):"
+                        android:text="Script Injection Delay (ms):"
                         android:textStyle="bold" />
 
                     <LinearLayout

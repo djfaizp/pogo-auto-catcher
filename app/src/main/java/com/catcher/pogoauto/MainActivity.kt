@@ -29,167 +29,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-
-        init {
-            try {
-                // Log detailed information about the loading process
-                LogUtils.i(TAG, "Attempting to load Frida gadget library")
-
-                // Check the app's native library directory
-                try {
-                    // We can't use createDeviceProtectedStorageContext here since we don't have a context yet
-                    // Just log that we'll check the libraries later in verifyFridaConfiguration
-                    LogUtils.i(TAG, "Will check native library directory during app initialization")
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Error checking native library directory", e)
-                }
-
-                // Try to get information about the library file in the app's data directory
-                try {
-                    // Check multiple possible locations for the Frida gadget library
-                    // Added more potential paths to find the library
-                    val possiblePaths = listOf(
-                        "/data/data/com.catcher.pogoauto/lib/libfrida-gadget.so",
-                        "/data/data/com.catcher.pogoauto/app/src/main/jniLibs/arm64-v8a/libfrida-gadget.so",
-                        "/data/app/~~3FCfbdahzqdvtXdxVqoEbg==/com.catcher.pogoauto-WXhXeyQ_ljsM-K99UJJoSQ==/lib/arm64/libfrida-gadget.so",
-                        "/data/app/com.catcher.pogoauto/lib/arm64/libfrida-gadget.so",
-                        "/data/app/com.catcher.pogoauto-*/lib/arm64/libfrida-gadget.so",
-                        "/data/app/~~*/com.catcher.pogoauto-*/lib/arm64/libfrida-gadget.so",
-                        "/data/local/tmp/libfrida-gadget.so"
-                    )
-
-                    var libraryFound = false
-                    for (path in possiblePaths) {
-                        // Skip wildcard paths as they can't be checked directly
-                        if (path.contains("*")) {
-                            continue
-                        }
-
-                        val file = File(path)
-                        if (file.exists()) {
-                            LogUtils.i(TAG, "Frida gadget library file exists at $path, size: ${file.length()} bytes")
-                            libraryFound = true
-                            break
-                        } else {
-                            LogUtils.d(TAG, "Frida gadget library file does not exist at $path")
-                        }
-                    }
-
-                    if (!libraryFound) {
-                        LogUtils.w(TAG, "Frida gadget library file not found in any of the expected locations")
-                        // We'll do a more thorough check in verifyFridaConfiguration
-                    }
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Error checking Frida gadget library file", e)
-                }
-
-                // Try to load the library with better error handling
-                try {
-                    LogUtils.i(TAG, "Attempting to load libfrida-gadget.so")
-
-                    // First try with System.load if we know the exact path
-                    var loaded = false
-                    try {
-                        // Try to load from the custom path
-                        val customPath = LibraryUtils.getCustomFridaGadgetLibraryPath()
-                        if (File(customPath).exists()) {
-                            LogUtils.i(TAG, "Loading Frida gadget from custom path: $customPath")
-                            System.load(customPath)
-                            loaded = true
-                            LogUtils.i(TAG, "Frida gadget loaded successfully from custom path")
-                        } else {
-                            LogUtils.e(TAG, "Frida gadget not found at custom path: $customPath")
-                        }
-                    } catch (e: Exception) {
-                        LogUtils.e(TAG, "Failed to load Frida gadget from custom path", e)
-                    }
-
-                    // If not loaded yet, try with loadLibrary
-                    if (!loaded) {
-                        try {
-                            System.loadLibrary("frida-gadget")
-                            loaded = true
-                            LogUtils.i(TAG, "Frida gadget loaded successfully via loadLibrary")
-                        } catch (e: UnsatisfiedLinkError) {
-                            LogUtils.e(TAG, "Failed to load via loadLibrary: ${e.message}")
-
-                            // Try one more approach - load from the app's native library directory
-                            try {
-                                // We can't access applicationContext here in the init block
-                                // Just log that we'll check the native library directory later
-                                LogUtils.i(TAG, "Will check native library directory during app initialization")
-                                // We'll try to load the library in verifyFridaConfiguration instead
-                            } catch (e2: Exception) {
-                                LogUtils.e(TAG, "Failed to load from native lib dir", e2)
-                            }
-                        }
-                    }
-
-                    // Log additional diagnostic information
-                    LogUtils.i(TAG, "Frida gadget initialization complete")
-
-                    // Try to verify the library was actually loaded
-                    try {
-                        val runtime = Runtime.getRuntime()
-                        val process = runtime.exec("lsof | grep frida")
-                        val reader = BufferedReader(InputStreamReader(process.inputStream))
-                        var line: String?
-                        var foundInProcess = false
-
-                        while (reader.readLine().also { line = it } != null) {
-                            if (line?.contains("frida") == true) {
-                                LogUtils.i(TAG, "Frida found in process: $line")
-                                foundInProcess = true
-                            }
-                        }
-
-                        if (!foundInProcess) {
-                            LogUtils.w(TAG, "Frida gadget loaded but not found in process list")
-                        }
-                    } catch (e: Exception) {
-                        LogUtils.e(TAG, "Error verifying Frida gadget in process", e)
-                    }
-                } catch (e: UnsatisfiedLinkError) {
-                    LogUtils.e(TAG, "Failed to load frida-gadget", e)
-                    LogUtils.e(TAG, "Error details: ${e.message}")
-
-                    // Try to get more information about the error
-                    try {
-                        val libraryPath = System.mapLibraryName("frida-gadget")
-                        LogUtils.e(TAG, "Attempted to load library: $libraryPath")
-
-                        // Check library paths
-                        val paths = System.getProperty("java.library.path")
-                        LogUtils.d(TAG, "Library search paths: $paths")
-
-                        // Check if the library exists in the jniLibs directory
-                        val jniLibDir = File("app/src/main/jniLibs/arm64-v8a")
-                        if (jniLibDir.exists()) {
-                            val files = jniLibDir.listFiles()
-                            if (files != null) {
-                                LogUtils.d(TAG, "jniLibs directory contains ${files.size} files:")
-                                for (file in files) {
-                                    LogUtils.d(TAG, "- ${file.name} (${file.length()} bytes)")
-                                }
-                            } else {
-                                LogUtils.w(TAG, "jniLibs directory is empty or cannot be read")
-                            }
-                        } else {
-                            LogUtils.w(TAG, "jniLibs directory does not exist")
-                        }
-
-                        // We'll check available libraries in verifyFridaConfiguration
-                        LogUtils.d(TAG, "Will check available libraries during app initialization")
-                    } catch (ex: Exception) {
-                        LogUtils.e(TAG, "Error getting additional library information", ex)
-                    }
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Unexpected error loading Frida gadget", e)
-                }
-            } catch (e: Exception) {
-                LogUtils.e(TAG, "Critical error in Frida gadget initialization", e)
-            }
-        }
     }
 
     private lateinit var appBarConfiguration: AppBarConfiguration
@@ -261,13 +100,38 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Copy Frida gadget library from custom path
-        if (LibraryUtils.copyFridaGadgetLibrary(this)) {
-            LogUtils.i(TAG, "Frida gadget library copied successfully")
-            Toast.makeText(this, "Frida gadget library copied successfully", Toast.LENGTH_SHORT).show()
+        // Extract and install Frida server from assets
+        val extractedPath = LibraryUtils.extractFridaServerFromAssets(this)
+        if (extractedPath != null) {
+            LogUtils.i(TAG, "Frida server extracted successfully: $extractedPath")
+            Toast.makeText(this, "Frida server extracted successfully", Toast.LENGTH_SHORT).show()
+
+            // Set executable permissions
+            if (LibraryUtils.setFridaServerPermissions(this, extractedPath)) {
+                LogUtils.i(TAG, "Frida server permissions set at ${LibraryUtils.getFridaServerPath(this)}")
+                Toast.makeText(this, "Frida server installed successfully", Toast.LENGTH_SHORT).show()
+
+                // Check if Frida server is running
+                if (LibraryUtils.isFridaServerRunning()) {
+                    LogUtils.i(TAG, "Frida server is already running")
+                    Toast.makeText(this, "Frida server is already running", Toast.LENGTH_SHORT).show()
+                } else {
+                    LogUtils.i(TAG, "Frida server is not running, attempting to start it")
+                    if (LibraryUtils.startFridaServer(this)) {
+                        LogUtils.i(TAG, "Frida server started successfully")
+                        Toast.makeText(this, "Frida server started successfully", Toast.LENGTH_SHORT).show()
+                    } else {
+                        LogUtils.e(TAG, "Failed to start Frida server")
+                        Toast.makeText(this, "Failed to start Frida server. Root access may be required.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                LogUtils.e(TAG, "Failed to set permissions on Frida server at ${LibraryUtils.getFridaServerPath(this)}")
+                Toast.makeText(this, "Failed to set permissions on Frida server. Root access may be required.", Toast.LENGTH_SHORT).show()
+            }
         } else {
-            LogUtils.e(TAG, "Failed to copy Frida gadget library")
-            Toast.makeText(this, "Failed to copy Frida gadget library", Toast.LENGTH_SHORT).show()
+            LogUtils.e(TAG, "Failed to extract Frida server from assets")
+            Toast.makeText(this, "Failed to extract Frida server from assets", Toast.LENGTH_SHORT).show()
         }
 
         // Extract Frida script
@@ -389,190 +253,85 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Check config file
-        val configFile = File(fridaScriptManager.getConfigPath())
-        if (configFile.exists() && configFile.length() > 0) {
-            LogUtils.i(TAG, "Frida config file verified: ${configFile.absolutePath}, size: ${configFile.length()} bytes")
-
-            // Verify config content
-            try {
-                val configContent = configFile.readText()
-                LogUtils.d(TAG, "Config content: $configContent")
-
-                val expectedScriptPath = "/data/data/${packageName}/files/${FridaScriptManager.SCRIPT_FILENAME}"
-
-                if (configContent.contains(expectedScriptPath)) {
-                    LogUtils.i(TAG, "Frida config contains correct script path")
-                } else {
-                    LogUtils.w(TAG, "Frida config may have incorrect script path, expected: $expectedScriptPath")
-
-                    // Try to fix it
-                    val fixedConfig = configContent.replace(
-                        "\"path\": \"/data/data/com.catcher.pogoauto/files/pokemon-go-hook.js\"",
-                        "\"path\": \"$expectedScriptPath\""
-                    )
-
-                    if (fixedConfig != configContent) {
-                        // Write the fixed config
-                        configFile.writeText(fixedConfig)
-                        LogUtils.i(TAG, "Fixed Frida config script path")
-                        Toast.makeText(this, "Fixed Frida config script path", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                // Check if the config has the correct interaction type
-                if (!configContent.contains("\"type\": \"script\"")) {
-                    LogUtils.w(TAG, "Config may have incorrect interaction type, should be 'script'")
-
-                    // Try to fix it
-                    val fixedConfig = configContent.replace(
-                        "\"type\": \"listen\"",
-                        "\"type\": \"script\""
-                    )
-
-                    if (fixedConfig != configContent) {
-                        configFile.writeText(fixedConfig)
-                        LogUtils.i(TAG, "Fixed Frida config interaction type")
-                        Toast.makeText(this, "Fixed Frida config interaction type", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                LogUtils.e(TAG, "Error verifying Frida config content", e)
-            }
-        } else {
-            LogUtils.e(TAG, "Frida config file missing or empty: ${configFile.absolutePath}")
-            Toast.makeText(this, "Frida config file missing or empty", Toast.LENGTH_SHORT).show()
-
-            // Try to re-extract the config
-            if (fridaScriptManager.extractScriptFromAssets()) {
-                LogUtils.i(TAG, "Re-extracted Frida config successfully")
-                Toast.makeText(this, "Re-extracted Frida config", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Check Frida gadget library
+        // Check Frida server status
         try {
-            val libDir = File(applicationContext.applicationInfo.nativeLibraryDir)
-            LogUtils.i(TAG, "Native library directory: ${libDir.absolutePath}")
+            if (LibraryUtils.isFridaServerInstalled(this)) {
+                LogUtils.i(TAG, "Frida server is installed at ${LibraryUtils.getFridaServerPath(this)}")
 
-            // List all files in the native library directory
-            val files = libDir.listFiles()
-            if (files != null) {
-                LogUtils.i(TAG, "Native library directory contains ${files.size} files:")
-                for (file in files) {
-                    LogUtils.i(TAG, "- ${file.name} (${file.length()} bytes)")
-                }
-            } else {
-                LogUtils.w(TAG, "Native library directory is empty or cannot be read")
-            }
+                if (LibraryUtils.isFridaServerRunning()) {
+                    LogUtils.i(TAG, "Frida server is running")
 
-            // Check both the app's native library directory and the custom path
-            val fridaLib = File(libDir, "libfrida-gadget.so")
-            val customFridaLib = File(LibraryUtils.getCustomFridaGadgetLibraryPath())
+                    // Check if we can connect to the Frida server
+                    try {
+                        // Use ps command to check for running processes instead of frida-ps
+                        val process = Runtime.getRuntime().exec("ps -A")
+                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                        val output = reader.readText()
 
-            if (fridaLib.exists() && fridaLib.length() > 0) {
-                LogUtils.i(TAG, "Frida gadget library verified in app's native library directory: ${fridaLib.absolutePath}, size: ${fridaLib.length()} bytes")
+                        if (output.isNotEmpty()) {
+                            LogUtils.i(TAG, "Successfully verified running processes")
+                            LogUtils.d(TAG, "Process list sample: ${output.take(500)}")
 
-                // Check file permissions
-                try {
-                    val execResult = Runtime.getRuntime().exec("ls -la ${fridaLib.absolutePath}")
-                    val reader = BufferedReader(InputStreamReader(execResult.inputStream))
-                    val output = reader.readText()
-                    LogUtils.i(TAG, "Frida gadget library permissions: $output")
-                } catch (e: Exception) {
-                    LogUtils.e(TAG, "Error checking Frida gadget library permissions", e)
-                }
-            } else if (customFridaLib.exists() && customFridaLib.length() > 0) {
-                LogUtils.i(TAG, "Frida gadget library found in custom path: ${customFridaLib.absolutePath}, size: ${customFridaLib.length()} bytes")
+                            // Check if our Frida server is in the process list
+                            val fridaServerPath = LibraryUtils.getFridaServerPath(this)
+                            val fridaServerFilename = File(fridaServerPath).name
 
-                // Try to copy it to the app's native library directory
-                if (LibraryUtils.copyFridaGadgetLibrary(this)) {
-                    LogUtils.i(TAG, "Copied Frida gadget library from custom path to app's native library directory")
-                } else {
-                    LogUtils.e(TAG, "Failed to copy Frida gadget library from custom path")
-                }
-            } else {
-                LogUtils.e(TAG, "Frida gadget library missing or empty in both locations: ${fridaLib.absolutePath} and ${customFridaLib.absolutePath}")
-
-                // Check multiple possible locations for the library
-                val possiblePaths = listOf(
-                    "/data/data/com.catcher.pogoauto/lib/libfrida-gadget.so",
-                    "/data/data/com.catcher.pogoauto/app/src/main/jniLibs/arm64-v8a/libfrida-gadget.so",
-                    "/data/app/~~3FCfbdahzqdvtXdxVqoEbg==/com.catcher.pogoauto-WXhXeyQ_ljsM-K99UJJoSQ==/lib/arm64/libfrida-gadget.so",
-                    "/data/app/com.catcher.pogoauto/lib/arm64/libfrida-gadget.so"
-                )
-
-                var foundLibrary = false
-                for (path in possiblePaths) {
-                    val file = File(path)
-                    if (file.exists() && file.length() > 0) {
-                        LogUtils.i(TAG, "Found Frida gadget library at: $path, size: ${file.length()} bytes")
-                        foundLibrary = true
-
-                        // Try to copy the library to the app's native library directory
-                        try {
-                            val destDir = File(applicationContext.applicationInfo.nativeLibraryDir)
-                            if (!destDir.exists()) {
-                                destDir.mkdirs()
-                            }
-                            val destFile = File(destDir, "libfrida-gadget.so")
-                            file.copyTo(destFile, overwrite = true)
-                            LogUtils.i(TAG, "Copied Frida gadget library to: ${destFile.absolutePath}")
-                            Toast.makeText(this, "Copied Frida gadget library, please restart the app", Toast.LENGTH_LONG).show()
-                            break
-                        } catch (e: Exception) {
-                            LogUtils.e(TAG, "Failed to copy Frida gadget library from $path", e)
-                        }
-                    }
-                }
-
-                if (!foundLibrary) {
-                    // Check if the library exists in the jniLibs directory
-                    val jniLibDir = File(applicationContext.applicationInfo.sourceDir)
-                        .parentFile?.parentFile?.parentFile?.parentFile
-                        ?.resolve("app/src/main/jniLibs/arm64-v8a")
-
-                    if (jniLibDir != null && jniLibDir.exists()) {
-                        LogUtils.i(TAG, "jniLibs directory exists: ${jniLibDir.absolutePath}")
-                        val jniLibFiles = jniLibDir.listFiles()
-                        if (jniLibFiles != null) {
-                            LogUtils.i(TAG, "jniLibs directory contains ${jniLibFiles.size} files:")
-                            for (file in jniLibFiles) {
-                                LogUtils.i(TAG, "- ${file.name} (${file.length()} bytes)")
-                            }
-
-                            val jniFridaLib = File(jniLibDir, "libfrida-gadget.so")
-                            if (jniFridaLib.exists() && jniFridaLib.length() > 0) {
-                                LogUtils.i(TAG, "Frida gadget library found in jniLibs: ${jniFridaLib.absolutePath}, size: ${jniFridaLib.length()} bytes")
-
-                                // Try to copy the library to the app's native library directory
-                                try {
-                                    val destDir = File(applicationContext.applicationInfo.nativeLibraryDir)
-                                    if (!destDir.exists()) {
-                                        destDir.mkdirs()
-                                    }
-                                    val destFile = File(destDir, "libfrida-gadget.so")
-                                    jniFridaLib.copyTo(destFile, overwrite = true)
-                                    LogUtils.i(TAG, "Copied Frida gadget library to: ${destFile.absolutePath}")
-                                    Toast.makeText(this, "Copied Frida gadget library, please restart the app", Toast.LENGTH_LONG).show()
-                                } catch (e: Exception) {
-                                    LogUtils.e(TAG, "Failed to copy Frida gadget library", e)
-                                }
+                            if (output.contains(fridaServerFilename) || output.contains("frida-server")) {
+                                LogUtils.i(TAG, "Frida server process found in process list")
                             } else {
-                                LogUtils.e(TAG, "Frida gadget library not found in jniLibs")
-                                Toast.makeText(this, "Frida gadget library not found. Please check installation.", Toast.LENGTH_LONG).show()
+                                LogUtils.w(TAG, "Frida server process not found in process list")
                             }
                         } else {
-                            LogUtils.w(TAG, "jniLibs directory is empty or cannot be read")
+                            LogUtils.w(TAG, "Got empty process list when checking Frida server")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error checking Frida server process", e)
+                    }
+                } else {
+                    LogUtils.w(TAG, "Frida server is installed but not running")
+                    Toast.makeText(this, "Frida server is not running. Starting it now...", Toast.LENGTH_SHORT).show()
+
+                    // Try to start the Frida server
+                    if (LibraryUtils.startFridaServer(this)) {
+                        LogUtils.i(TAG, "Successfully started Frida server")
+                        Toast.makeText(this, "Successfully started Frida server", Toast.LENGTH_SHORT).show()
+                    } else {
+                        LogUtils.e(TAG, "Failed to start Frida server")
+                        Toast.makeText(this, "Failed to start Frida server. Root access may be required.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } else {
+                LogUtils.i(TAG, "Frida server is not installed, extracting and installing from assets")
+
+                // Extract and install Frida server from assets
+                val extractedPath = LibraryUtils.extractFridaServerFromAssets(this)
+                if (extractedPath != null) {
+                    LogUtils.i(TAG, "Frida server extracted successfully: $extractedPath")
+
+                    // Set executable permissions
+                    if (LibraryUtils.setFridaServerPermissions(this, extractedPath)) {
+                        LogUtils.i(TAG, "Frida server permissions set at ${LibraryUtils.getFridaServerPath(this)}")
+                        Toast.makeText(this, "Frida server installed successfully", Toast.LENGTH_SHORT).show()
+
+                        // Try to start the Frida server
+                        if (LibraryUtils.startFridaServer(this)) {
+                            LogUtils.i(TAG, "Successfully started Frida server")
+                            Toast.makeText(this, "Successfully started Frida server", Toast.LENGTH_SHORT).show()
+                        } else {
+                            LogUtils.e(TAG, "Failed to start Frida server")
+                            Toast.makeText(this, "Failed to start Frida server. Root access may be required.", Toast.LENGTH_LONG).show()
                         }
                     } else {
-                        LogUtils.w(TAG, "jniLibs directory does not exist")
-                        Toast.makeText(this, "Frida gadget library missing or empty", Toast.LENGTH_SHORT).show()
+                        LogUtils.e(TAG, "Failed to set permissions on Frida server at ${LibraryUtils.getFridaServerPath(this)}")
+                        Toast.makeText(this, "Failed to set permissions on Frida server. Root access may be required.", Toast.LENGTH_LONG).show()
                     }
+                } else {
+                    LogUtils.e(TAG, "Failed to extract Frida server from assets")
+                    Toast.makeText(this, "Failed to extract Frida server from assets", Toast.LENGTH_SHORT).show()
                 }
             }
         } catch (e: Exception) {
-            LogUtils.e(TAG, "Error verifying Frida gadget library", e)
+            LogUtils.e(TAG, "Error checking Frida server status", e)
         }
 
         // Run a Frida status check

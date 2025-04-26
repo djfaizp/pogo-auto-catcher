@@ -1,12 +1,16 @@
 package com.catcher.pogoauto.ui.home
 
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
@@ -197,28 +201,30 @@ class HomeFragment : Fragment() {
         homeViewModel.clearLog()
         homeViewModel.appendLog("Checking for Pokémon GO installation...")
 
-        // Check Frida gadget library
-        val customLibPath = LibraryUtils.getCustomFridaGadgetLibraryPath()
-        val customLibExists = File(customLibPath).exists()
-        homeViewModel.appendLog("Custom Frida gadget library: ${if (customLibExists) "Found" else "Not found"} at $customLibPath")
+        // Check Frida server
+        val fridaServerInstalled = LibraryUtils.isFridaServerInstalled(requireContext())
+        homeViewModel.appendLog("Frida server: ${if (fridaServerInstalled) "Found" else "Not found"} at ${LibraryUtils.getFridaServerPath(requireContext())}")
 
-        if (customLibExists) {
-            val customLibSize = File(customLibPath).length()
-            homeViewModel.appendLog("Custom Frida gadget library size: $customLibSize bytes")
-        }
+        if (!fridaServerInstalled) {
+            homeViewModel.appendLog("Extracting Frida server from assets...")
+            val extractedPath = LibraryUtils.extractFridaServerFromAssets(requireContext())
+            if (extractedPath != null) {
+                homeViewModel.appendLog("Successfully extracted Frida server to $extractedPath")
 
-        // Check if library is in app's native directory
-        val appLibExists = LibraryUtils.checkFridaGadgetLibrary(requireContext())
-        homeViewModel.appendLog("Frida gadget library in app's native directory: ${if (appLibExists) "Found" else "Not found"}")
-
-        if (!appLibExists && customLibExists) {
-            homeViewModel.appendLog("Copying Frida gadget library from custom path...")
-            if (LibraryUtils.copyFridaGadgetLibrary(requireContext())) {
-                homeViewModel.appendLog("Successfully copied Frida gadget library to app's native directory")
+                // Set executable permissions
+                if (LibraryUtils.setFridaServerPermissions(requireContext(), extractedPath)) {
+                    homeViewModel.appendLog("Successfully set executable permissions on Frida server")
+                } else {
+                    homeViewModel.appendLog("Failed to set executable permissions on Frida server")
+                }
             } else {
-                homeViewModel.appendLog("Failed to copy Frida gadget library to app's native directory")
+                homeViewModel.appendLog("Failed to extract Frida server from assets")
             }
         }
+
+        // Check if Frida server is running
+        val fridaServerRunning = LibraryUtils.isFridaServerRunning()
+        homeViewModel.appendLog("Frida server running: $fridaServerRunning")
 
         // Check if Pokémon GO is installed using our enhanced method
         val packageName = fridaScriptManager.getPokemonGoPackageName()
@@ -329,14 +335,72 @@ class HomeFragment : Fragment() {
                 updateFilterChips()
             }
             .setNegativeButton("Cancel", null)
-            .setNeutralButton("Clear Filters") { _, _ ->
-                // Clear all filters
-                logAdapter.clearFilters()
-                updateFilterChips()
-            }
             .create()
 
+        // Add buttons for Select All and Clear Filters
+        dialog.setOnShowListener {
+            // Get the dialog buttons
+            val positiveButton = dialog.getButton(MaterialAlertDialogBuilder.BUTTON_POSITIVE)
+            val negativeButton = dialog.getButton(MaterialAlertDialogBuilder.BUTTON_NEGATIVE)
+
+            // Create a horizontal layout for the additional buttons
+            val layout = dialog.findViewById<ViewGroup>(android.R.id.buttonPanel)
+            val selectAllButton = dialog.context.createButton("Select All") {
+                // Select all filters
+                logAdapter.selectAllFilters()
+
+                // Update the dialog checkboxes
+                val listView = dialog.findViewById<ListView>(android.R.id.list)
+                for (i in 0 until categories.size) {
+                    listView?.setItemChecked(i, true)
+                }
+            }
+
+            val clearFiltersButton = dialog.context.createButton("Clear Filters") {
+                // Clear all filters
+                logAdapter.clearFilters()
+
+                // Update the dialog checkboxes
+                val listView = dialog.findViewById<ListView>(android.R.id.list)
+                for (i in 0 until categories.size) {
+                    listView?.setItemChecked(i, false)
+                }
+            }
+
+            // Add the buttons to the layout
+            layout?.addView(selectAllButton, 0)
+            layout?.addView(clearFiltersButton, 1)
+
+            // Adjust layout params for existing buttons
+            positiveButton.layoutParams = (positiveButton.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                marginStart = resources.getDimensionPixelSize(R.dimen.dialog_button_margin)
+            }
+
+            negativeButton.layoutParams = (negativeButton.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                marginStart = resources.getDimensionPixelSize(R.dimen.dialog_button_margin)
+            }
+        }
+
         dialog.show()
+    }
+
+    /**
+     * Extension function to create a button for the dialog
+     */
+    private fun Context.createButton(text: String, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            this.text = text
+            this.setTextColor(resources.getColor(R.color.colorAccent, null))
+            this.setBackgroundResource(android.R.color.transparent)
+            this.setOnClickListener { onClick() }
+            this.minWidth = resources.getDimensionPixelSize(R.dimen.dialog_button_min_width)
+            this.setPadding(
+                resources.getDimensionPixelSize(R.dimen.dialog_button_padding_horizontal),
+                resources.getDimensionPixelSize(R.dimen.dialog_button_padding_vertical),
+                resources.getDimensionPixelSize(R.dimen.dialog_button_padding_horizontal),
+                resources.getDimensionPixelSize(R.dimen.dialog_button_padding_vertical)
+            )
+        }
     }
 
     /**
