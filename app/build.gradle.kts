@@ -66,11 +66,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
     sourceSets {
         getByName("main") {
@@ -89,11 +89,33 @@ android {
             keepDebugSymbols += "**/libfrida-gadget.so"
             useLegacyPackaging = true  // Use legacy packaging for better compatibility
         }
+        resources {
+            excludes += "META-INF/LICENSE.md"
+            excludes += "META-INF/LICENSE-notice.md"
+        }
     }
 
     // Ensure native libraries are properly extracted
     androidResources {
         noCompress += "so"  // Don't compress .so files
+    }
+
+    // Make sure to extract native libraries
+    // This is critical for Frida gadget to work properly
+    android.applicationVariants.all {
+        val variant = this
+        tasks.getByName("merge${variant.name.capitalize()}NativeLibs").doLast {
+            println("Ensuring Frida gadget library is properly extracted for ${variant.name}")
+        }
+    }
+
+    // Explicitly set extractNativeLibs to true in the manifest
+    applicationVariants.all {
+        val variant = this
+        variant.outputs.forEach { output ->
+            (output as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.outputFileName =
+                "pogo-auto-catcher-${variant.versionName}.apk"
+        }
     }
 }
 

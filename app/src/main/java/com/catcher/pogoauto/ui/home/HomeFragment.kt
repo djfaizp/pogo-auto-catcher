@@ -14,6 +14,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.catcher.pogoauto.FridaScriptManager
 import com.catcher.pogoauto.R
 import com.catcher.pogoauto.databinding.FragmentHomeBinding
+import com.catcher.pogoauto.service.ServiceManager
+import com.catcher.pogoauto.utils.LibraryUtils
+import java.io.File
 import com.catcher.pogoauto.ui.log.LogEntryAdapter
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -23,6 +26,7 @@ class HomeFragment : Fragment() {
     private var _binding: FragmentHomeBinding? = null
     private lateinit var homeViewModel: HomeViewModel
     private lateinit var fridaScriptManager: FridaScriptManager
+    private lateinit var serviceManager: ServiceManager
     private lateinit var logAdapter: LogEntryAdapter
 
     // This property is only valid between onCreateView and
@@ -39,8 +43,9 @@ class HomeFragment : Fragment() {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         val root: View = binding.root
 
-        // Initialize Frida script manager
+        // Initialize managers
         fridaScriptManager = FridaScriptManager(requireContext())
+        serviceManager = ServiceManager(requireContext())
 
         // Set up UI elements
         setupUI()
@@ -120,10 +125,14 @@ class HomeFragment : Fragment() {
             if (fridaScriptManager.extractScriptFromAssets()) {
                 updateFridaScript()
 
-                // Launch Pokémon GO
-                if (fridaScriptManager.launchPokemonGo()) {
+                // Start the foreground service
+                serviceManager.startService()
+                homeViewModel.appendLog("Started foreground service")
+
+                // Launch Pokémon GO through the service
+                if (serviceManager.launchPokemonGo()) {
                     homeViewModel.setStatus(HomeViewModel.STATUS_RUNNING)
-                    homeViewModel.appendLog("Launched Pokémon GO with Frida hook")
+                    homeViewModel.appendLog("Launched Pokémon GO with Frida hook via service")
                 } else {
                     homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                     homeViewModel.appendLog("Failed to launch Pokémon GO (package: $packageName)")
@@ -142,10 +151,14 @@ class HomeFragment : Fragment() {
             if (fridaScriptManager.extractScriptFromAssets()) {
                 updateFridaScript()
 
-                // Launch Pokémon GO
-                if (fridaScriptManager.launchPokemonGo()) {
+                // Start the foreground service
+                serviceManager.startService()
+                homeViewModel.appendLog("Started foreground service")
+
+                // Launch Pokémon GO through the service
+                if (serviceManager.launchPokemonGo()) {
                     homeViewModel.setStatus(HomeViewModel.STATUS_RUNNING)
-                    homeViewModel.appendLog("Launched Pokémon GO with Frida hook")
+                    homeViewModel.appendLog("Launched Pokémon GO with Frida hook via service")
                 } else {
                     homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
                     homeViewModel.appendLog("Failed to launch Pokémon GO")
@@ -183,6 +196,29 @@ class HomeFragment : Fragment() {
     private fun checkPokemonGo() {
         homeViewModel.clearLog()
         homeViewModel.appendLog("Checking for Pokémon GO installation...")
+
+        // Check Frida gadget library
+        val customLibPath = LibraryUtils.getCustomFridaGadgetLibraryPath()
+        val customLibExists = File(customLibPath).exists()
+        homeViewModel.appendLog("Custom Frida gadget library: ${if (customLibExists) "Found" else "Not found"} at $customLibPath")
+
+        if (customLibExists) {
+            val customLibSize = File(customLibPath).length()
+            homeViewModel.appendLog("Custom Frida gadget library size: $customLibSize bytes")
+        }
+
+        // Check if library is in app's native directory
+        val appLibExists = LibraryUtils.checkFridaGadgetLibrary(requireContext())
+        homeViewModel.appendLog("Frida gadget library in app's native directory: ${if (appLibExists) "Found" else "Not found"}")
+
+        if (!appLibExists && customLibExists) {
+            homeViewModel.appendLog("Copying Frida gadget library from custom path...")
+            if (LibraryUtils.copyFridaGadgetLibrary(requireContext())) {
+                homeViewModel.appendLog("Successfully copied Frida gadget library to app's native directory")
+            } else {
+                homeViewModel.appendLog("Failed to copy Frida gadget library to app's native directory")
+            }
+        }
 
         // Check if Pokémon GO is installed using our enhanced method
         val packageName = fridaScriptManager.getPokemonGoPackageName()
@@ -314,23 +350,27 @@ class HomeFragment : Fragment() {
             .setTitle("Stop Pokémon GO")
             .setMessage("Are you sure you want to stop Pokémon GO and the Frida hook?")
             .setPositiveButton("Stop") { _, _ ->
-                // Run the stop operation in a background thread
-                Thread {
-                    val success = fridaScriptManager.stopPokemonGo()
+                // Stop Pokémon GO through the service
+                serviceManager.stopPokemonGo()
 
-                    // Update UI on the main thread
-                    activity?.runOnUiThread {
-                        if (success) {
-                            homeViewModel.setStatus(HomeViewModel.STATUS_STOPPED)
-                            homeViewModel.appendLog("Pokémon GO stopped successfully")
-                            Toast.makeText(requireContext(), "Pokémon GO stopped", Toast.LENGTH_SHORT).show()
-                        } else {
-                            homeViewModel.setStatus(HomeViewModel.STATUS_FAILED)
-                            homeViewModel.appendLog("Failed to stop Pokémon GO")
-                            Toast.makeText(requireContext(), "Failed to stop Pokémon GO", Toast.LENGTH_SHORT).show()
-                        }
+                // Update UI
+                homeViewModel.setStatus(HomeViewModel.STATUS_STOPPED)
+                homeViewModel.appendLog("Stopping Pokémon GO through service")
+                Toast.makeText(requireContext(), "Stopping Pokémon GO", Toast.LENGTH_SHORT).show()
+
+                // Ask if user wants to stop the service too
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Stop Service")
+                    .setMessage("Do you also want to stop the background service?")
+                    .setPositiveButton("Yes") { _, _ ->
+                        serviceManager.stopService()
+                        homeViewModel.appendLog("Stopped background service")
+                        Toast.makeText(requireContext(), "Background service stopped", Toast.LENGTH_SHORT).show()
                     }
-                }.start()
+                    .setNegativeButton("No") { _, _ ->
+                        homeViewModel.appendLog("Background service kept running")
+                    }
+                    .show()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -375,5 +415,20 @@ class HomeFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // Check service status and update UI
+        try {
+            val serviceStatus = serviceManager.getServiceStatus()
+            if (serviceManager.isServiceRunning()) {
+                homeViewModel.setStatus(HomeViewModel.STATUS_RUNNING)
+                homeViewModel.appendLog("Service is running with status: $serviceStatus")
+            }
+        } catch (e: Exception) {
+            // Service might not be bound yet
+        }
     }
 }

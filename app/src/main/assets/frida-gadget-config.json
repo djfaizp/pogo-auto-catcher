@@ -1,8 +1,10 @@
 {
   "interaction": {
-    "type": "script",
-    "path": "/data/data/com.catcher.pogoauto/files/pokemon-go-hook.js",
-    "on_change": "reload"
+    "type": "listen",
+    "address": "127.0.0.1",
+    "port": 27042,
+    "on_port_conflict": "fail",
+    "on_load": "resume"
   },
   "runtime": "v8"
 }

@@ -10,4 +10,12 @@
     <string name="menu_home">Home</string>
     <string name="menu_gallery">Gallery</string>
     <string name="menu_slideshow">Slideshow</string>
+
+    <!-- Service related strings -->
+    <string name="service_notification_title">Pokémon GO Auto Catcher</string>
+    <string name="service_notification_text">Service is running in the background</string>
+    <string name="service_notification_channel_name">Auto Catcher Service</string>
+    <string name="service_notification_channel_description">Keeps the Pokémon GO Auto Catcher running in the background</string>
+    <string name="service_action_stop">Stop Service</string>
+    <string name="service_action_stop_pokemon">Stop Pokémon GO</string>
 </resources>

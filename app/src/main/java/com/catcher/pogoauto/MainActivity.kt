@@ -13,6 +13,8 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.catcher.pogoauto.databinding.ActivityMainBinding
+import com.catcher.pogoauto.service.ServiceManager
+import com.catcher.pogoauto.utils.LibraryUtils
 import com.catcher.pogoauto.utils.LogUtils
 import com.catcher.pogoauto.utils.PermissionManager
 import com.google.android.material.navigation.NavigationView
@@ -45,15 +47,24 @@ class MainActivity : AppCompatActivity() {
                 // Try to get information about the library file in the app's data directory
                 try {
                     // Check multiple possible locations for the Frida gadget library
+                    // Added more potential paths to find the library
                     val possiblePaths = listOf(
                         "/data/data/com.catcher.pogoauto/lib/libfrida-gadget.so",
                         "/data/data/com.catcher.pogoauto/app/src/main/jniLibs/arm64-v8a/libfrida-gadget.so",
                         "/data/app/~~3FCfbdahzqdvtXdxVqoEbg==/com.catcher.pogoauto-WXhXeyQ_ljsM-K99UJJoSQ==/lib/arm64/libfrida-gadget.so",
-                        "/data/app/com.catcher.pogoauto/lib/arm64/libfrida-gadget.so"
+                        "/data/app/com.catcher.pogoauto/lib/arm64/libfrida-gadget.so",
+                        "/data/app/com.catcher.pogoauto-*/lib/arm64/libfrida-gadget.so",
+                        "/data/app/~~*/com.catcher.pogoauto-*/lib/arm64/libfrida-gadget.so",
+                        "/data/local/tmp/libfrida-gadget.so"
                     )
 
                     var libraryFound = false
                     for (path in possiblePaths) {
+                        // Skip wildcard paths as they can't be checked directly
+                        if (path.contains("*")) {
+                            continue
+                        }
+
                         val file = File(path)
                         if (file.exists()) {
                             LogUtils.i(TAG, "Frida gadget library file exists at $path, size: ${file.length()} bytes")
@@ -66,6 +77,7 @@ class MainActivity : AppCompatActivity() {
 
                     if (!libraryFound) {
                         LogUtils.w(TAG, "Frida gadget library file not found in any of the expected locations")
+                        // We'll do a more thorough check in verifyFridaConfiguration
                     }
                 } catch (e: Exception) {
                     LogUtils.e(TAG, "Error checking Frida gadget library file", e)
@@ -74,11 +86,69 @@ class MainActivity : AppCompatActivity() {
                 // Try to load the library with better error handling
                 try {
                     LogUtils.i(TAG, "Attempting to load libfrida-gadget.so")
-                    System.loadLibrary("frida-gadget")
-                    LogUtils.i(TAG, "Frida gadget loaded successfully")
+
+                    // First try with System.load if we know the exact path
+                    var loaded = false
+                    try {
+                        // Try to load from the custom path
+                        val customPath = LibraryUtils.getCustomFridaGadgetLibraryPath()
+                        if (File(customPath).exists()) {
+                            LogUtils.i(TAG, "Loading Frida gadget from custom path: $customPath")
+                            System.load(customPath)
+                            loaded = true
+                            LogUtils.i(TAG, "Frida gadget loaded successfully from custom path")
+                        } else {
+                            LogUtils.e(TAG, "Frida gadget not found at custom path: $customPath")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Failed to load Frida gadget from custom path", e)
+                    }
+
+                    // If not loaded yet, try with loadLibrary
+                    if (!loaded) {
+                        try {
+                            System.loadLibrary("frida-gadget")
+                            loaded = true
+                            LogUtils.i(TAG, "Frida gadget loaded successfully via loadLibrary")
+                        } catch (e: UnsatisfiedLinkError) {
+                            LogUtils.e(TAG, "Failed to load via loadLibrary: ${e.message}")
+
+                            // Try one more approach - load from the app's native library directory
+                            try {
+                                // We can't access applicationContext here in the init block
+                                // Just log that we'll check the native library directory later
+                                LogUtils.i(TAG, "Will check native library directory during app initialization")
+                                // We'll try to load the library in verifyFridaConfiguration instead
+                            } catch (e2: Exception) {
+                                LogUtils.e(TAG, "Failed to load from native lib dir", e2)
+                            }
+                        }
+                    }
 
                     // Log additional diagnostic information
                     LogUtils.i(TAG, "Frida gadget initialization complete")
+
+                    // Try to verify the library was actually loaded
+                    try {
+                        val runtime = Runtime.getRuntime()
+                        val process = runtime.exec("lsof | grep frida")
+                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                        var line: String?
+                        var foundInProcess = false
+
+                        while (reader.readLine().also { line = it } != null) {
+                            if (line?.contains("frida") == true) {
+                                LogUtils.i(TAG, "Frida found in process: $line")
+                                foundInProcess = true
+                            }
+                        }
+
+                        if (!foundInProcess) {
+                            LogUtils.w(TAG, "Frida gadget loaded but not found in process list")
+                        }
+                    } catch (e: Exception) {
+                        LogUtils.e(TAG, "Error verifying Frida gadget in process", e)
+                    }
                 } catch (e: UnsatisfiedLinkError) {
                     LogUtils.e(TAG, "Failed to load frida-gadget", e)
                     LogUtils.e(TAG, "Error details: ${e.message}")
@@ -91,6 +161,22 @@ class MainActivity : AppCompatActivity() {
                         // Check library paths
                         val paths = System.getProperty("java.library.path")
                         LogUtils.d(TAG, "Library search paths: $paths")
+
+                        // Check if the library exists in the jniLibs directory
+                        val jniLibDir = File("app/src/main/jniLibs/arm64-v8a")
+                        if (jniLibDir.exists()) {
+                            val files = jniLibDir.listFiles()
+                            if (files != null) {
+                                LogUtils.d(TAG, "jniLibs directory contains ${files.size} files:")
+                                for (file in files) {
+                                    LogUtils.d(TAG, "- ${file.name} (${file.length()} bytes)")
+                                }
+                            } else {
+                                LogUtils.w(TAG, "jniLibs directory is empty or cannot be read")
+                            }
+                        } else {
+                            LogUtils.w(TAG, "jniLibs directory does not exist")
+                        }
 
                         // We'll check available libraries in verifyFridaConfiguration
                         LogUtils.d(TAG, "Will check available libraries during app initialization")
@@ -110,6 +196,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var fridaScriptManager: FridaScriptManager
     private lateinit var permissionManager: PermissionManager
+    private lateinit var serviceManager: ServiceManager
 
     // Launcher for battery optimization settings
     private val batteryOptimizationLauncher = registerForActivityResult(
@@ -156,6 +243,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize managers
         fridaScriptManager = FridaScriptManager(this)
         permissionManager = PermissionManager(this)
+        serviceManager = ServiceManager(this)
 
         // Log app start
         LogUtils.i(TAG, "Application started")
@@ -173,6 +261,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Copy Frida gadget library from custom path
+        if (LibraryUtils.copyFridaGadgetLibrary(this)) {
+            LogUtils.i(TAG, "Frida gadget library copied successfully")
+            Toast.makeText(this, "Frida gadget library copied successfully", Toast.LENGTH_SHORT).show()
+        } else {
+            LogUtils.e(TAG, "Failed to copy Frida gadget library")
+            Toast.makeText(this, "Failed to copy Frida gadget library", Toast.LENGTH_SHORT).show()
+        }
+
         // Extract Frida script
         if (fridaScriptManager.extractScriptFromAssets()) {
             LogUtils.i(TAG, "Frida script extracted successfully")
@@ -188,8 +285,12 @@ class MainActivity : AppCompatActivity() {
 
         binding.appBarMain.fab.setOnClickListener { view ->
             if (fridaScriptManager.isPokemonGoInstalled()) {
-                if (fridaScriptManager.launchPokemonGo()) {
-                    LogUtils.i(TAG, "Launching Pokémon GO with Frida hook")
+                // Start the foreground service first
+                serviceManager.startService()
+
+                // Launch Pokémon GO through the service
+                if (serviceManager.launchPokemonGo()) {
+                    LogUtils.i(TAG, "Launching Pokémon GO with Frida hook via service")
                     Snackbar.make(view, "Launching Pokémon GO with Frida hook", Snackbar.LENGTH_LONG)
                         .setAction("Action", null)
                         .setAnchorView(R.id.fab).show()
@@ -230,6 +331,15 @@ class MainActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment_content_main)
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        LogUtils.i(TAG, "MainActivity onDestroy")
+
+        // Unbind from service but don't stop it
+        // This allows the service to continue running in the background
+        serviceManager.unbindService()
     }
 
     /**
@@ -342,7 +452,7 @@ class MainActivity : AppCompatActivity() {
 
         // Check Frida gadget library
         try {
-            val libDir = File(applicationInfo.nativeLibraryDir)
+            val libDir = File(applicationContext.applicationInfo.nativeLibraryDir)
             LogUtils.i(TAG, "Native library directory: ${libDir.absolutePath}")
 
             // List all files in the native library directory
@@ -356,10 +466,12 @@ class MainActivity : AppCompatActivity() {
                 LogUtils.w(TAG, "Native library directory is empty or cannot be read")
             }
 
+            // Check both the app's native library directory and the custom path
             val fridaLib = File(libDir, "libfrida-gadget.so")
+            val customFridaLib = File(LibraryUtils.getCustomFridaGadgetLibraryPath())
 
             if (fridaLib.exists() && fridaLib.length() > 0) {
-                LogUtils.i(TAG, "Frida gadget library verified: ${fridaLib.absolutePath}, size: ${fridaLib.length()} bytes")
+                LogUtils.i(TAG, "Frida gadget library verified in app's native library directory: ${fridaLib.absolutePath}, size: ${fridaLib.length()} bytes")
 
                 // Check file permissions
                 try {
@@ -370,8 +482,17 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     LogUtils.e(TAG, "Error checking Frida gadget library permissions", e)
                 }
+            } else if (customFridaLib.exists() && customFridaLib.length() > 0) {
+                LogUtils.i(TAG, "Frida gadget library found in custom path: ${customFridaLib.absolutePath}, size: ${customFridaLib.length()} bytes")
+
+                // Try to copy it to the app's native library directory
+                if (LibraryUtils.copyFridaGadgetLibrary(this)) {
+                    LogUtils.i(TAG, "Copied Frida gadget library from custom path to app's native library directory")
+                } else {
+                    LogUtils.e(TAG, "Failed to copy Frida gadget library from custom path")
+                }
             } else {
-                LogUtils.e(TAG, "Frida gadget library missing or empty: ${fridaLib.absolutePath}")
+                LogUtils.e(TAG, "Frida gadget library missing or empty in both locations: ${fridaLib.absolutePath} and ${customFridaLib.absolutePath}")
 
                 // Check multiple possible locations for the library
                 val possiblePaths = listOf(
@@ -390,7 +511,7 @@ class MainActivity : AppCompatActivity() {
 
                         // Try to copy the library to the app's native library directory
                         try {
-                            val destDir = File(applicationInfo.nativeLibraryDir)
+                            val destDir = File(applicationContext.applicationInfo.nativeLibraryDir)
                             if (!destDir.exists()) {
                                 destDir.mkdirs()
                             }
@@ -407,7 +528,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (!foundLibrary) {
                     // Check if the library exists in the jniLibs directory
-                    val jniLibDir = File(applicationInfo.sourceDir)
+                    val jniLibDir = File(applicationContext.applicationInfo.sourceDir)
                         .parentFile?.parentFile?.parentFile?.parentFile
                         ?.resolve("app/src/main/jniLibs/arm64-v8a")
 
@@ -426,7 +547,7 @@ class MainActivity : AppCompatActivity() {
 
                                 // Try to copy the library to the app's native library directory
                                 try {
-                                    val destDir = File(applicationInfo.nativeLibraryDir)
+                                    val destDir = File(applicationContext.applicationInfo.nativeLibraryDir)
                                     if (!destDir.exists()) {
                                         destDir.mkdirs()
                                     }
